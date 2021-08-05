@@ -162,6 +162,21 @@ mod amm {
             instance
         }
 
+        #[ink(message)]
+        pub fn token_0(&self) -> TokenId {
+            return self.token_0;
+        }
+
+        #[ink(message)]
+        pub fn token_1(&self) -> TokenId {
+            return self.token_1;
+        }
+
+        #[ink(message)]
+        pub fn lp_token(&self) -> TokenId {
+            return self.lp_token;
+        }
+
         /// Returns the total token supply.
         #[ink(message)]
         pub fn total_supply(&self) -> Balance {
