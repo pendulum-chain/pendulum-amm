@@ -32,6 +32,7 @@ mod amm {
         InsufficientInputAmount,
         InsufficientOutputAmount,
         InvalidDepositToken,
+        InvalidSwapToken,
         InvalidTo,
         InvalidK,
         IdenticalAddress,
@@ -124,18 +125,19 @@ mod amm {
     impl Pair {
         #[ink(constructor)]
         pub fn new(
-            initial_supply: Balance,
             token_0: TokenId,
+            initial_supply_0: Balance,
             token_1: TokenId,
+            initial_supply_1: Balance,
             lp_token: TokenId,
         ) -> Self {
             let caller = Self::env().caller();
             let contract = Self::env().account_id();
             let mut balances = StorageHashMap::new();
-            balances.insert((caller, token_0), initial_supply);
-            balances.insert((caller, token_1), initial_supply);
-            balances.insert((contract, token_0), initial_supply);
-            balances.insert((contract, token_1), initial_supply);
+            balances.insert((caller, token_0), initial_supply_0);
+            balances.insert((caller, token_1), initial_supply_1);
+            balances.insert((contract, token_0), initial_supply_0);
+            balances.insert((contract, token_1), initial_supply_1);
 
             let instance = Self {
                 total_supply: 0,
@@ -143,8 +145,8 @@ mod amm {
                 token_0,
                 token_1,
                 lp_token,
-                reserve_0: initial_supply,
-                reserve_1: initial_supply,
+                reserve_0: initial_supply_0,
+                reserve_1: initial_supply_1,
                 block_timestamp_last: 0,
                 price_0_cumulative_last: 0,
                 price_1_cumulative_last: 0,
@@ -155,7 +157,7 @@ mod amm {
             Self::env().emit_event(Transfer {
                 from: None,
                 to: Some(caller),
-                value: initial_supply,
+                value: initial_supply_0 + initial_supply_1,
             });
             instance
         }
@@ -183,12 +185,7 @@ mod amm {
         /// Returns `InsufficientBalance` error if there are not enough tokens on
         /// the caller's account balance.
         // #[ink(message)]
-        pub fn transfer(
-            &mut self,
-            to: AccountId,
-            token: TokenId,
-            value: Balance,
-        ) -> Result<()> {
+        pub fn transfer(&mut self, to: AccountId, token: TokenId, value: Balance) -> Result<()> {
             let from = self.env().caller();
             self.transfer_from_to(from, to, token, value)
         }
@@ -311,11 +308,7 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn withdraw(
-            &mut self,
-            amount: Balance,
-            to: AccountId,
-        ) -> Result<(Balance, Balance)> {
+        pub fn withdraw(&mut self, amount: Balance, to: AccountId) -> Result<(Balance, Balance)> {
             let total_supply = self.total_supply;
             if total_supply == 0 {
                 return Err(Error::WithdrawWithoutSupply);
@@ -336,11 +329,9 @@ mod amm {
             let fee_on = self._mint_fee(reserve_0, reserve_1);
             // rescale amounts with ACCURACY_MULTIPLIER to return proper amounts
             let amount_0 = amount * balance_0
-                / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER)
-                    * ACCURACY_MULTIPLIER);
+                / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
             let amount_1 = amount * balance_1
-                / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER)
-                    * ACCURACY_MULTIPLIER);
+                / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
 
             if !(amount_0 > 0 || amount_1 > 0) {
                 return Err(Error::InsufficientLiquidityBurned);
@@ -366,7 +357,17 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn swap(
+        pub fn swap(&mut self, token: TokenId, amount: Balance, account: AccountId) -> Result<()> {
+            if token == self.token_0 {
+                return self._swap(amount, 0, account);
+            } else if token == self.token_1 {
+                return self._swap(0, amount, account);
+            } else {
+                return Err(Error::InvalidSwapToken);
+            }
+        }
+
+        fn _swap(
             &mut self,
             amount_0_out: Balance,
             amount_1_out: Balance,
@@ -402,14 +403,12 @@ mod amm {
                 return Err(Error::InsufficientInputAmount);
             }
             if amount_0_out > 0 {
-                let converted_amount_in =
-                    amount_0_out * balance_0 / (balance_1 - amount_0_out);
+                let converted_amount_in = amount_0_out * balance_0 / (balance_1 - amount_0_out);
                 self.transfer_from_to(to, contract, token_1, converted_amount_in)?;
                 self.transfer_from_to(contract, to, token_0, amount_0_out)?;
             }
             if amount_1_out > 0 {
-                let converted_amount_in =
-                    amount_1_out * balance_1 / (balance_0 - amount_1_out);
+                let converted_amount_in = amount_1_out * balance_1 / (balance_0 - amount_1_out);
                 self.transfer_from_to(to, contract, token_0, converted_amount_in)?;
                 self.transfer_from_to(contract, to, token_1, amount_1_out)?;
             }
@@ -492,7 +491,7 @@ mod amm {
                         if liquidity > 0 {
                             match self._mint(account, liquidity) {
                                 Ok(_) => return true,
-                                Err(_) => return false
+                                Err(_) => return false,
                             }
                         }
                     }
@@ -548,7 +547,7 @@ mod amm {
         fn new_works() {
             // Constructor works.
             let initial_supply = 1_000;
-            let pair = Pair::new(initial_supply, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let contract_balance_0 = pair.reserve_0;
             let contract_balance_1 = pair.reserve_1;
@@ -561,7 +560,7 @@ mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(initial_supply, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let deposit_amount = 100;
 
@@ -605,9 +604,11 @@ mod amm {
         #[ink::test]
         fn deposit_works_for_unbalanced_pair() {
             let to = AccountId::from([0x01; 32]);
-            let mut pair = Pair::new(1_000, TOKEN_0, TOKEN_1, LP_TOKEN);
 
-            pair.swap(100, 0, to).expect("Swap did not work");
+            let initial_supply = 1_000;
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+
+            pair.swap(TOKEN_0, 100, to).expect("Swap did not work");
 
             let deposit_amount = 100;
             let user_balance_0_pre_deposit = pair.balance_of(to, TOKEN_0);
@@ -633,7 +634,8 @@ mod amm {
         fn withdraw_without_lp_fails() {
             let to = AccountId::from([0x01; 32]);
 
-            let mut pair = Pair::new(1_000_000, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let initial_supply = 1_000_000;
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let result = pair.withdraw(1, to);
             assert_eq!(Err(Error::WithdrawWithoutSupply), result);
@@ -648,7 +650,8 @@ mod amm {
         fn withdraw_works() {
             let to = AccountId::from([0x01; 32]);
 
-            let mut pair = Pair::new(1_000_000, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let initial_supply = 1_000_000;
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let deposit_amount = 5_000_00;
             let result = pair.deposit(deposit_amount, TOKEN_0, to);
@@ -692,7 +695,8 @@ mod amm {
         fn deposit_and_withdraw_work() {
             let to = AccountId::from([0x01; 32]);
 
-            let mut pair = Pair::new(1_000_000, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let initial_supply = 1_000_000;
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let deposit_amount = 5_000_00;
             // do initial deposit which initiates total_supply
@@ -728,7 +732,8 @@ mod amm {
         fn swap_works_with_small_amount() {
             let to = AccountId::from([0x01; 32]);
 
-            let mut pair = Pair::new(1_000_000, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let initial_supply = 1_000_000;
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
@@ -745,7 +750,7 @@ mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(swap_amount, 0, to);
+            let result = pair.swap(TOKEN_0, swap_amount, to);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
@@ -755,8 +760,7 @@ mod amm {
             );
             assert_eq!(
                 user_balance_1_post_swap,
-                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round()
-                    as u128
+                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
             );
 
             let rate: f64 =
@@ -769,7 +773,7 @@ mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(0, swap_amount, to);
+            let result = pair.swap(TOKEN_1, swap_amount, to);
             result.expect("Encountered error in swap");
 
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
@@ -780,8 +784,7 @@ mod amm {
             );
             assert_eq!(
                 user_balance_0_post_swap,
-                ((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round()
-                    as u128
+                ((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
             );
             assert_eq!(
                 user_balance_1_post_swap,
@@ -793,7 +796,8 @@ mod amm {
         fn swap_works_with_large_amount() {
             let to = AccountId::from([0x01; 32]);
 
-            let mut pair = Pair::new(1_000_000, TOKEN_0, TOKEN_1, LP_TOKEN);
+            let initial_supply = 1_000_000;
+            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
@@ -810,7 +814,7 @@ mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(swap_amount, 0, to);
+            let result = pair.swap(TOKEN_0, swap_amount, to);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
@@ -824,8 +828,7 @@ mod amm {
             );
             assert_eq!(
                 user_balance_1_post_swap,
-                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round()
-                    as u128
+                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
             );
 
             let rate: f64 =
@@ -837,14 +840,13 @@ mod amm {
                 "Balances pre swap: {}, {}",
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
-            let result = pair.swap(0, swap_amount, to);
+            let result = pair.swap(TOKEN_1, swap_amount, to);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
             assert_eq!(
                 user_balance_0_post_swap,
-                ((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round()
-                    as u128
+                ((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
             );
             assert_eq!(
                 user_balance_1_post_swap,
