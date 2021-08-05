@@ -22,7 +22,7 @@ num-integer = { version = "0.1.36", default-features = false }
 
 [lib]
 name = "pendulum_amm"
-path = "lib.rs"
+path = "src/lib.rs"
 crate-type = [
 	# Used for normal contract Wasm blobs.
 	"cdylib",
