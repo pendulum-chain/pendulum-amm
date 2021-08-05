@@ -4,11 +4,7 @@ use ink_lang as ink;
 
 #[ink::contract]
 mod amm {
-    #[cfg(not(feature = "ink-as-dependency"))]
-    use ink_lang as ink;
-
-    #[cfg(not(feature = "ink-as-dependency"))]
-    use ink_lang::{EmitEvent, Env};
+    use ink_prelude::string::String;
 
     #[cfg(not(feature = "ink-as-dependency"))]
     use ink_storage::collections::HashMap as StorageHashMap;
@@ -163,18 +159,18 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn token_0(&self) -> TokenId {
-            return self.token_0;
+        pub fn token_0(&self) -> String {
+            return String::from_utf8(self.token_0.to_vec()).unwrap();
         }
 
         #[ink(message)]
-        pub fn token_1(&self) -> TokenId {
-            return self.token_1;
+        pub fn token_1(&self) -> String {
+            return String::from_utf8(self.token_1.to_vec()).unwrap();
         }
 
         #[ink(message)]
-        pub fn lp_token(&self) -> TokenId {
-            return self.lp_token;
+        pub fn lp_token(&self) -> String {
+            return String::from_utf8(self.lp_token.to_vec()).unwrap();
         }
 
         /// Returns the total token supply.
@@ -250,7 +246,7 @@ mod amm {
             &mut self,
             amount: Balance,
             token: TokenId,
-            to: AccountId,
+            from: AccountId,
         ) -> Result<Balance> {
             let contract = self.env().account_id();
             let token_0 = self.token_0;
@@ -273,8 +269,8 @@ mod amm {
                 amount
             };
 
-            let user_balance_0 = self.balance_of(to, token_0);
-            let user_balance_1 = self.balance_of(to, token_1);
+            let user_balance_0 = self.balance_of(from, token_0);
+            let user_balance_1 = self.balance_of(from, token_1);
             if amount_0 > user_balance_0 {
                 return Err(Error::InsufficientBalance0);
             }
@@ -302,9 +298,9 @@ mod amm {
                 return Err(Error::InsufficientLiquidityMinted);
             }
 
-            self.transfer_from_to(to, contract, token_0, amount_0)?;
-            self.transfer_from_to(to, contract, token_1, amount_1)?;
-            self._mint(to, liquidity)?;
+            self.transfer_from_to(from, contract, token_0, amount_0)?;
+            self.transfer_from_to(from, contract, token_1, amount_1)?;
+            self._mint(from, liquidity)?;
 
             let balance_0 = self.balance_of(contract, token_0);
             let balance_1 = self.balance_of(contract, token_1);
@@ -372,10 +368,10 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn swap(&mut self, token: TokenId, amount: Balance, account: AccountId) -> Result<()> {
-            if token == self.token_0 {
+        pub fn swap(&mut self, token_to_receive: TokenId, amount: Balance, account: AccountId) -> Result<()> {
+            if token_to_receive == self.token_0 {
                 return self._swap(amount, 0, account);
-            } else if token == self.token_1 {
+            } else if token_to_receive == self.token_1 {
                 return self._swap(0, amount, account);
             } else {
                 return Err(Error::InvalidSwapToken);
