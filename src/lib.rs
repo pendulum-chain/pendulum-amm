@@ -4,6 +4,7 @@ use ink_lang as ink;
 
 #[ink::contract]
 mod amm {
+    #[cfg(not(feature = "ink-as-dependency"))]
     use ink_prelude::string::String;
 
     #[cfg(not(feature = "ink-as-dependency"))]
