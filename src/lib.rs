@@ -1,9 +1,55 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use ink_env::Environment;
 use ink_lang as ink;
 
-#[ink::contract]
-mod amm {
+type TokenId = [u8; 4];
+
+#[ink::chain_extension]
+pub trait BalanceExtension {
+    type ErrorCode = BalanceReadErr;
+
+    #[ink(extension = 1101, returns_result = false)]
+    fn fetch_balance(owner: ink_env::AccountId, token: TokenId) -> u128;
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+pub enum BalanceReadErr {
+    FailGetBalance,
+}
+
+impl ink_env::chain_extension::FromStatusCode for BalanceReadErr {
+    fn from_status_code(status_code: u32) -> Result<(), Self> {
+        match status_code {
+            0 => Ok(()),
+            1 => Err(Self::FailGetBalance),
+            _ => panic!("encountered unknown status code"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+pub enum CustomEnvironment {}
+
+impl Environment for CustomEnvironment {
+    const MAX_EVENT_TOPICS: usize = <ink_env::DefaultEnvironment as Environment>::MAX_EVENT_TOPICS;
+
+    type AccountId = <ink_env::DefaultEnvironment as Environment>::AccountId;
+    type Balance = <ink_env::DefaultEnvironment as Environment>::Balance;
+    type Hash = <ink_env::DefaultEnvironment as Environment>::Hash;
+    type BlockNumber = <ink_env::DefaultEnvironment as Environment>::BlockNumber;
+    type Timestamp = <ink_env::DefaultEnvironment as Environment>::Timestamp;
+    type RentFraction = <ink_env::DefaultEnvironment as Environment>::RentFraction;
+
+    type ChainExtension = BalanceExtension;
+}
+
+#[ink::contract(env = crate::CustomEnvironment)]
+pub mod amm {
+    use super::BalanceReadErr;
+
     #[cfg(not(feature = "ink-as-dependency"))]
     use ink_prelude::string::String;
 
@@ -185,7 +231,12 @@ mod amm {
         /// Returns `0` if the account is non-existent.
         #[ink(message)]
         pub fn balance_of(&self, owner: AccountId, token: TokenId) -> Balance {
-            self.balances.get(&(owner, token)).copied().unwrap_or(0)
+            let balance = match self.env().extension().fetch_balance(owner, token) {
+                Ok(balance) => balance,
+                // Err(err) => Err(BalanceReadErr::FailGetBalance),
+                Err(_) => 0,
+            };
+            return balance;
         }
 
         /// Transfers `value` amount of tokens from the caller's account to account `to`.
@@ -369,7 +420,12 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn swap(&mut self, token_to_receive: TokenId, amount: Balance, account: AccountId) -> Result<()> {
+        pub fn swap(
+            &mut self,
+            token_to_receive: TokenId,
+            amount: Balance,
+            account: AccountId,
+        ) -> Result<()> {
             if token_to_receive == self.token_0 {
                 return self._swap(amount, 0, account);
             } else if token_to_receive == self.token_1 {
@@ -553,6 +609,27 @@ mod amm {
         const TOKEN_0: TokenId = [0, 0, 0, 0];
         const TOKEN_1: TokenId = [1, 1, 1, 1];
         const LP_TOKEN: TokenId = [2, 2, 2, 2];
+        struct MockedExtension;
+        impl ink_env::test::ChainExtension for MockedExtension {
+            /// The static function id of the chain extension.
+            fn func_id(&self) -> u32 {
+                1101
+            }
+
+            /// The chain extension is called with the given input.
+            ///
+            /// Returns an error code and may fill the `output` buffer with a
+            /// SCALE encoded result. The error code is taken from the
+            /// `ink_env::chain_extension::FromStatusCode` implementation for
+            /// `RandomReadErr`.
+            fn call(&mut self, _input: &[u8], output: &mut Vec<u8>) -> u32 {
+                let ret: [u8; 32] = [0; 32];
+                // let ret = 1;
+                scale::Encode::encode_to(&ret, output);
+                println!("input: {:?}, output: {:?}", _input, output);
+                0 // 0 is error code
+            }
+        }
 
         /// The default constructor does its job.
         #[ink::test]
@@ -568,7 +645,19 @@ mod amm {
         }
 
         #[ink::test]
+        fn balance_of_works() {
+            ink_env::test::register_chain_extension(MockedExtension);
+
+            let to = AccountId::from([0x01; 32]);
+            let initial_supply = 1_000;
+            let pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            println!("balance of: balance: {}", pair.balance_of(to, TOKEN_0));
+            assert_eq!(pair.balance_of(to, TOKEN_0), 0);
+        }
+
+        #[ink::test]
         fn deposit_works_for_balanced_pair() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
@@ -615,6 +704,7 @@ mod amm {
 
         #[ink::test]
         fn deposit_works_for_unbalanced_pair() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
@@ -644,6 +734,7 @@ mod amm {
 
         #[ink::test]
         fn withdraw_without_lp_fails() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -660,6 +751,7 @@ mod amm {
 
         #[ink::test]
         fn withdraw_works() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -705,6 +797,7 @@ mod amm {
 
         #[ink::test]
         fn deposit_and_withdraw_work() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -742,6 +835,7 @@ mod amm {
 
         #[ink::test]
         fn swap_works_with_small_amount() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -806,6 +900,7 @@ mod amm {
 
         #[ink::test]
         fn swap_works_with_large_amount() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
