@@ -3,14 +3,37 @@
 use ink_env::Environment;
 use ink_lang as ink;
 
-type TokenId = [u8; 4];
+// type TokenId = [u8; 4];
+
+#[derive(Copy, Clone)]
+pub enum TokenId {
+    EUR,
+    USDC,
+}
+
+impl Into<[u8; 4]> for TokenId {
+    fn into(self) -> [u8; 4] {
+        match self {
+            TokenId::EUR => [b'E', b'U', b'R', 0],
+            TokenId::USDC => [b'U', b'S', b'D', b'C'],
+        }
+    }
+}
 
 #[ink::chain_extension]
 pub trait BalanceExtension {
     type ErrorCode = BalanceReadErr;
 
     #[ink(extension = 1101, returns_result = false)]
-    fn fetch_balance(owner: ink_env::AccountId, token: TokenId) -> u128;
+    fn fetch_balance(owner: ink_env::AccountId, token: [u8; 4]) -> u128;
+
+    #[ink(extension = 1102, returns_result = false, handle_status = false)]
+    fn transfer_balance(
+        from: ink_env::AccountId,
+        to: ink_env::AccountId,
+        token: [u8; 4],
+        amount: u128,
+    ) -> ();
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -48,9 +71,10 @@ impl Environment for CustomEnvironment {
 
 #[ink::contract(env = crate::CustomEnvironment)]
 pub mod amm {
-    use super::BalanceReadErr;
+    use crate::TokenId;
 
     #[cfg(not(feature = "ink-as-dependency"))]
+    #[allow(unused_imports)]
     use ink_prelude::string::String;
 
     #[cfg(not(feature = "ink-as-dependency"))]
@@ -87,7 +111,7 @@ pub mod amm {
     /// The ERC-20 result type.
     pub type Result<T> = core::result::Result<T, Error>;
 
-    type TokenId = [u8; 4];
+    //type TokenId = [u8; 4];
     const MINIMUM_LIQUIDITY: u128 = 1;
     const ACCURACY_MULTIPLIER: u128 = 1_000;
 
@@ -107,9 +131,9 @@ pub mod amm {
         #[ink(topic)]
         sender: AccountId,
         #[ink(topic)]
-        amount_0: Balance,
+        amount_usdc: Balance,
         #[ink(topic)]
-        amount_1: Balance,
+        amount_eur: Balance,
     }
 
     #[ink(event)]
@@ -118,8 +142,8 @@ pub mod amm {
         sender: AccountId,
         #[ink(topic)]
         to: AccountId,
-        amount_0: Balance,
-        amount_1: Balance,
+        amount_usdc: Balance,
+        amount_eur: Balance,
     }
 
     #[ink(event)]
@@ -128,96 +152,46 @@ pub mod amm {
         sender: AccountId,
         #[ink(topic)]
         to: AccountId,
-        amount_0_in: Balance,
-        amount_1_in: Balance,
-        amount_0_out: Balance,
-        amount_1_out: Balance,
+        amount_to_send: Balance,
+        amount_to_receive: Balance,
     }
 
     #[ink(event)]
     pub struct Sync {
         #[ink(topic)]
-        reserve_0: Balance,
+        reserve_usdc: Balance,
         #[ink(topic)]
-        reserve_1: Balance,
+        reserve_eur: Balance,
     }
 
     #[ink(storage)]
     pub struct Pair {
-        token_0: TokenId,
-        token_1: TokenId,
-        lp_token: TokenId,
-
-        reserve_0: Balance,
-        reserve_1: Balance,
-        block_timestamp_last: Timestamp,
-
-        price_0_cumulative_last: Balance,
-        price_1_cumulative_last: Balance,
-        k_last: Balance, // reserve0 * reserve1, as of immediately after the most recent liquidity event
-
-        unlocked: u32,
-
-        fee_to: Option<AccountId>, // address of account that receives fee
+        reserve_usdc: Balance,
+        reserve_eur: Balance,
 
         total_supply: Balance,
         /// Mapping from owner to number of owned token.
-        balances: StorageHashMap<(AccountId, TokenId), Balance>,
+        lp_balances: StorageHashMap<AccountId, Balance>,
     }
 
     impl Pair {
         #[ink(constructor)]
-        pub fn new(
-            token_0: TokenId,
-            initial_supply_0: Balance,
-            token_1: TokenId,
-            initial_supply_1: Balance,
-            lp_token: TokenId,
-        ) -> Self {
+        pub fn new() -> Self {
             let caller = Self::env().caller();
-            let contract = Self::env().account_id();
-            let mut balances = StorageHashMap::new();
-            balances.insert((caller, token_0), initial_supply_0);
-            balances.insert((caller, token_1), initial_supply_1);
-            balances.insert((contract, token_0), initial_supply_0);
-            balances.insert((contract, token_1), initial_supply_1);
 
             let instance = Self {
                 total_supply: 0,
-                balances,
-                token_0,
-                token_1,
-                lp_token,
-                reserve_0: initial_supply_0,
-                reserve_1: initial_supply_1,
-                block_timestamp_last: 0,
-                price_0_cumulative_last: 0,
-                price_1_cumulative_last: 0,
-                k_last: 0,
-                unlocked: 1,
-                fee_to: None,
+                lp_balances: Default::default(),
+                reserve_usdc: 0,
+                reserve_eur: 0,
             };
+
             Self::env().emit_event(Transfer {
                 from: None,
                 to: Some(caller),
-                value: initial_supply_0 + initial_supply_1,
+                value: 0,
             });
             instance
-        }
-
-        #[ink(message)]
-        pub fn token_0(&self) -> String {
-            return String::from_utf8(self.token_0.to_vec()).unwrap();
-        }
-
-        #[ink(message)]
-        pub fn token_1(&self) -> String {
-            return String::from_utf8(self.token_1.to_vec()).unwrap();
-        }
-
-        #[ink(message)]
-        pub fn lp_token(&self) -> String {
-            return String::from_utf8(self.lp_token.to_vec()).unwrap();
         }
 
         /// Returns the total token supply.
@@ -230,57 +204,17 @@ pub mod amm {
         ///
         /// Returns `0` if the account is non-existent.
         #[ink(message)]
+        pub fn lp_balance_of(&self, owner: AccountId) -> Balance {
+            *self.lp_balances.get(&owner).unwrap_or(&0)
+        }
+
         pub fn balance_of(&self, owner: AccountId, token: TokenId) -> Balance {
-            let balance = match self.env().extension().fetch_balance(owner, token) {
+            let balance = match self.env().extension().fetch_balance(owner, token.into()) {
                 Ok(balance) => balance,
                 // Err(err) => Err(BalanceReadErr::FailGetBalance),
                 Err(_) => 0,
             };
             return balance;
-        }
-
-        /// Transfers `value` amount of tokens from the caller's account to account `to`.
-        ///
-        /// On success a `Transfer` event is emitted.
-        ///
-        /// # Errors
-        ///
-        /// Returns `InsufficientBalance` error if there are not enough tokens on
-        /// the caller's account balance.
-        // #[ink(message)]
-        pub fn transfer(&mut self, to: AccountId, token: TokenId, value: Balance) -> Result<()> {
-            let from = self.env().caller();
-            self.transfer_from_to(from, to, token, value)
-        }
-
-        /// Transfers `value` amount of tokens from the caller's account to account `to`.
-        ///
-        /// On success a `Transfer` event is emitted.
-        ///
-        /// # Errors
-        ///
-        /// Returns `InsufficientBalance` error if there are not enough tokens on
-        /// the caller's account balance.
-        fn transfer_from_to(
-            &mut self,
-            from: AccountId,
-            to: AccountId,
-            token: TokenId,
-            value: Balance,
-        ) -> Result<()> {
-            let from_balance = self.balance_of(from, token);
-            if from_balance < value {
-                return Err(Error::InsufficientBalance);
-            }
-            self.balances.insert((from, token), from_balance - value);
-            let to_balance = self.balance_of(to, token);
-            self.balances.insert((to, token), to_balance + value);
-            self.env().emit_event(Transfer {
-                from: Some(from),
-                to: Some(to),
-                value,
-            });
-            Ok(())
         }
 
         #[ink(message)]
@@ -289,60 +223,69 @@ pub mod amm {
         }
 
         #[ink(message)]
-        pub fn get_reserves(&self) -> (Balance, Balance, Timestamp) {
-            return (self.reserve_0, self.reserve_1, self.block_timestamp_last);
+        pub fn get_reserves(&self) -> (Balance, Balance) {
+            return (self.reserve_usdc, self.reserve_eur);
         }
 
         #[ink(message)]
-        pub fn deposit(
-            &mut self,
-            amount: Balance,
-            token: TokenId,
-            from: AccountId,
-        ) -> Result<Balance> {
+        pub fn deposit_usdc(&mut self, amount_usdc: Balance) -> Result<Balance> {
+            self.deposit(amount_usdc, TokenId::USDC)
+        }
+
+        #[ink(message)]
+        pub fn deposit_eur(&mut self, amount_eur: Balance) -> Result<Balance> {
+            self.deposit(amount_eur, TokenId::EUR)
+        }
+
+        pub fn deposit(&mut self, amount: Balance, token: TokenId) -> Result<Balance> {
             let contract = self.env().account_id();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            if token != token_0 && token != token_1 {
-                return Err(Error::InvalidDepositToken);
-            }
+            let from = self.env().caller();
 
-            let (reserve_0, reserve_1, _) = self.get_reserves();
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
-            let amount_0 = if token == token_0 {
-                amount
-            } else {
-                amount * balance_0 / balance_1
-            };
-            let amount_1 = if token == token_0 {
-                amount * balance_1 / balance_0
-            } else {
-                amount
+            let (reserve_usdc, reserve_eur) = self.get_reserves();
+
+            let balance_usdc = self.balance_of(contract, TokenId::USDC);
+            let balance_eur = self.balance_of(contract, TokenId::EUR);
+
+            let (amount_usdc, amount_eur) = match token {
+                TokenId::USDC => (
+                    amount,
+                    if balance_usdc > 0 {
+                        amount * balance_eur / balance_usdc
+                    } else {
+                        amount
+                    },
+                ),
+                TokenId::EUR => (
+                    if balance_eur > 0 {
+                        amount * balance_usdc / balance_eur
+                    } else {
+                        amount
+                    },
+                    amount,
+                ),
             };
 
-            let user_balance_0 = self.balance_of(from, token_0);
-            let user_balance_1 = self.balance_of(from, token_1);
-            if amount_0 > user_balance_0 {
+            let user_balance_usdc = self.balance_of(from, TokenId::USDC);
+            let user_balance_eur = self.balance_of(from, TokenId::EUR);
+            if amount_usdc > user_balance_usdc {
                 return Err(Error::InsufficientBalance0);
             }
-            if amount_1 > user_balance_1 {
+            if amount_eur > user_balance_eur {
                 return Err(Error::InsufficientBalance1);
             }
 
-            let fee_on = self._mint_fee(reserve_0, reserve_1);
             let total_supply = self.total_supply;
             let liquidity: Balance;
             if total_supply == 0 {
-                liquidity = sqrt(amount_0 * amount_1) - MINIMUM_LIQUIDITY;
+                liquidity = sqrt(amount_usdc * amount_eur) - MINIMUM_LIQUIDITY;
                 let address_zero = AccountId::from([0x01; 32]);
                 self._mint(address_zero, MINIMUM_LIQUIDITY)?; // permanently lock first liquidity tokens
             } else {
                 // upscale liquidity with ACCURACY_MULTIPLIER to improve precision
                 // because usage of fractional numbers is not possible
                 liquidity = core::cmp::min(
-                    amount_0 * ACCURACY_MULTIPLIER * total_supply / reserve_0,
-                    amount_1 * ACCURACY_MULTIPLIER * total_supply / reserve_1,
+                    amount_usdc * ACCURACY_MULTIPLIER * total_supply / reserve_usdc,
+                    amount_eur * ACCURACY_MULTIPLIER * total_supply / reserve_eur,
                 );
             }
 
@@ -350,21 +293,18 @@ pub mod amm {
                 return Err(Error::InsufficientLiquidityMinted);
             }
 
-            self.transfer_from_to(from, contract, token_0, amount_0)?;
-            self.transfer_from_to(from, contract, token_1, amount_1)?;
+            self.transfer_tokens(from, contract, TokenId::USDC, amount_usdc)?;
+            self.transfer_tokens(from, contract, TokenId::EUR, amount_eur)?;
             self._mint(from, liquidity)?;
 
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
-            self._update(balance_0, balance_1, reserve_0, reserve_1)?;
-            if fee_on {
-                self.k_last = reserve_0 * reserve_1;
-            }
+            let balance_usdc = self.balance_of(contract, TokenId::USDC);
+            let balance_eur = self.balance_of(contract, TokenId::EUR);
+            self._update(balance_usdc, balance_eur, reserve_usdc, reserve_eur)?;
 
             self.env().emit_event(Mint {
                 sender: self.env().caller(),
-                amount_0,
-                amount_1,
+                amount_usdc,
+                amount_eur,
             });
 
             Ok(liquidity)
@@ -377,203 +317,140 @@ pub mod amm {
                 return Err(Error::WithdrawWithoutSupply);
             }
 
-            let user_lp_balance = self.balance_of(to, self.lp_token);
+            let user_lp_balance = self.lp_balance_of(to);
             if user_lp_balance < amount {
                 return Err(Error::InsufficientLiquidityBalance);
             }
 
             let contract = self.env().account_id();
-            let (reserve_0, reserve_1, _) = self.get_reserves();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let (reserve_usdc, reserve_eur) = self.get_reserves();
+            let balance_usdc = self.balance_of(contract, TokenId::USDC);
+            let balance_eur = self.balance_of(contract, TokenId::EUR);
 
-            let fee_on = self._mint_fee(reserve_0, reserve_1);
             // rescale amounts with ACCURACY_MULTIPLIER to return proper amounts
-            let amount_0 = amount * balance_0
+            let amount_usdc = amount * balance_usdc
                 / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
-            let amount_1 = amount * balance_1
+            let amount_eur = amount * balance_eur
                 / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
 
-            if !(amount_0 > 0 || amount_1 > 0) {
+            if !(amount_usdc > 0 || amount_eur > 0) {
                 return Err(Error::InsufficientLiquidityBurned);
             }
-            self.transfer_from_to(contract, to, token_0, amount_0)?;
-            self.transfer_from_to(contract, to, token_1, amount_1)?;
+
+            self.transfer_tokens(contract, to, TokenId::USDC, amount_usdc)?;
+            self.transfer_tokens(contract, to, TokenId::EUR, amount_eur)?;
             self._burn(to, amount)?;
 
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let balance_usdc = self.balance_of(contract, TokenId::USDC);
+            let balance_eur = self.balance_of(contract, TokenId::EUR);
+            self._update(balance_usdc, balance_eur, reserve_usdc, reserve_eur)?;
 
-            self._update(balance_0, balance_1, reserve_0, reserve_1)?;
-            if fee_on {
-                self.k_last = reserve_0 * reserve_1;
-            }
             self.env().emit_event(Burn {
                 sender: self.env().caller(),
-                amount_0,
-                amount_1,
+                amount_usdc,
+                amount_eur,
                 to,
             });
-            Ok((amount_0, amount_1))
+            Ok((amount_usdc, amount_eur))
         }
 
         #[ink(message)]
-        pub fn swap(
-            &mut self,
-            token_to_receive: TokenId,
-            amount: Balance,
-            account: AccountId,
-        ) -> Result<()> {
-            if token_to_receive == self.token_0 {
-                return self._swap(amount, 0, account);
-            } else if token_to_receive == self.token_1 {
-                return self._swap(0, amount, account);
-            } else {
-                return Err(Error::InvalidSwapToken);
-            }
+        pub fn swap_usdc_to_eur(&mut self, amount_to_receive: Balance) -> Result<()> {
+            self._swap(self.env().caller(), amount_to_receive, TokenId::EUR)
+        }
+
+        #[ink(message)]
+        pub fn swap_eur_to_usdc(&mut self, amount_to_receive: Balance) -> Result<()> {
+            self._swap(self.env().caller(), amount_to_receive, TokenId::USDC)
         }
 
         fn _swap(
             &mut self,
-            amount_0_out: Balance,
-            amount_1_out: Balance,
-            to: AccountId,
+            from: AccountId,
+            amount_to_receive: Balance,
+            token_to_receive: TokenId,
         ) -> Result<()> {
-            if !(amount_0_out > 0 || amount_1_out > 0) {
+            if amount_to_receive <= 0 {
                 return Err(Error::InsufficientOutputAmount);
             }
-            let (reserve_0, reserve_1, _) = self.get_reserves();
-            if amount_0_out > reserve_0 || amount_1_out > reserve_1 {
+
+            let (reserve_usdc, reserve_eur) = self.get_reserves();
+            if match token_to_receive {
+                TokenId::USDC => amount_to_receive > reserve_usdc,
+                TokenId::EUR => amount_to_receive > reserve_eur,
+            } {
                 return Err(Error::InsufficientLiquidity);
             }
 
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-
             let contract = self.env().account_id();
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let balance_usdc = self.balance_of(contract, TokenId::USDC);
+            let balance_eur = self.balance_of(contract, TokenId::EUR);
 
-            let amount_0_in = if balance_0 > reserve_0 - amount_0_out {
-                balance_0 - (reserve_0 - amount_0_out)
-            } else {
-                0
+            let (amount_to_send, token_to_send) = match token_to_receive {
+                TokenId::USDC => (
+                    amount_to_receive * balance_eur / (balance_usdc - amount_to_receive),
+                    TokenId::EUR,
+                ),
+                TokenId::EUR => (
+                    amount_to_receive * balance_usdc / (balance_eur - amount_to_receive),
+                    TokenId::USDC,
+                ),
             };
-            let amount_1_in = if balance_1 > reserve_1 - amount_1_out {
-                balance_1 - (reserve_1 - amount_1_out)
-            } else {
-                0
-            };
 
-            if !(amount_0_in > 0 || amount_1_in > 0) {
-                return Err(Error::InsufficientInputAmount);
-            }
-            if amount_0_out > 0 {
-                let converted_amount_in = amount_0_out * balance_0 / (balance_1 - amount_0_out);
-                self.transfer_from_to(to, contract, token_1, converted_amount_in)?;
-                self.transfer_from_to(contract, to, token_0, amount_0_out)?;
-            }
-            if amount_1_out > 0 {
-                let converted_amount_in = amount_1_out * balance_1 / (balance_0 - amount_1_out);
-                self.transfer_from_to(to, contract, token_0, converted_amount_in)?;
-                self.transfer_from_to(contract, to, token_1, amount_1_out)?;
-            }
+            self.transfer_tokens(from, contract, token_to_send, amount_to_send)?;
+            self.transfer_tokens(contract, from, token_to_receive, amount_to_receive)?;
 
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let balance_usdc = self.balance_of(contract, TokenId::USDC);
+            let balance_eur = self.balance_of(contract, TokenId::EUR);
 
-            self._update(balance_0, balance_1, reserve_0, reserve_1)?;
+            self._update(balance_usdc, balance_eur, reserve_usdc, reserve_eur)?;
             self.env().emit_event(Swap {
                 sender: self.env().caller(),
-                amount_0_in,
-                amount_1_in,
-                amount_0_out,
-                amount_1_out,
-                to,
+                to: from,
+                amount_to_send,
+                amount_to_receive,
             });
             Ok(())
         }
 
-        /// force balances to match reserves
-        #[ink(message)]
-        pub fn skim(&mut self, to: AccountId) -> Result<()> {
-            let contract = self.env().account_id();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
-            self.transfer_from_to(contract, to, token_0, balance_0 - self.reserve_0)?;
-            self.transfer_from_to(contract, to, token_1, balance_1 - self.reserve_1)?;
+        pub fn transfer_tokens(
+            &mut self,
+            from: AccountId,
+            to: AccountId,
+            token: TokenId,
+            amount: Balance,
+        ) -> Result<()> {
+            let from_balance = self.balance_of(from, token);
+            if from_balance < amount {
+                return Err(Error::InsufficientBalance);
+            }
 
-            Ok(())
-        }
-
-        #[ink(message)]
-        pub fn sync(&mut self) -> Result<()> {
-            let contract = self.env().account_id();
-            self._update(
-                self.balance_of(contract, self.token_0),
-                self.balance_of(contract, self.token_1),
-                self.reserve_0,
-                self.reserve_1,
-            )?;
+            self.env()
+                .extension()
+                .transfer_balance(from, to, token.into(), amount);
             Ok(())
         }
 
         fn _update(
             &mut self,
-            balance_0: Balance,
-            balance_1: Balance,
-            reserve_0: Balance,
-            reserve_1: Balance,
+            balance_usdc: Balance,
+            balance_eur: Balance,
+            reserve_usdc: Balance,
+            reserve_eur: Balance,
         ) -> Result<()> {
-            let block_timestamp = self.env().block_timestamp();
-            let time_elapsed: u128 = (block_timestamp - self.block_timestamp_last).into();
-
-            if time_elapsed > 0 && reserve_0 != 0 && reserve_1 != 0 {
-                self.price_0_cumulative_last += reserve_1 * time_elapsed / reserve_0;
-                self.price_1_cumulative_last += reserve_0 * time_elapsed / reserve_1;
-            }
-            self.reserve_0 = balance_0;
-            self.reserve_1 = balance_1;
-            self.block_timestamp_last = block_timestamp;
+            self.reserve_usdc = balance_usdc;
+            self.reserve_eur = balance_eur;
             self.env().emit_event(Sync {
-                reserve_0,
-                reserve_1,
+                reserve_usdc,
+                reserve_eur,
             });
             Ok(())
         }
 
-        fn _mint_fee(&mut self, reserve_0: Balance, reserve_1: Balance) -> bool {
-            let fee_to = self.fee_to;
-            if let Some(account) = fee_to {
-                if self.k_last != 0 {
-                    let root_k = sqrt(reserve_0 * reserve_1);
-                    let root_k_last = sqrt(self.k_last);
-                    if root_k > root_k_last {
-                        let numerator = self.total_supply * (root_k - root_k_last);
-                        let denominator = root_k * 5 + root_k_last;
-                        let liquidity = numerator / denominator;
-                        if liquidity > 0 {
-                            match self._mint(account, liquidity) {
-                                Ok(_) => return true,
-                                Err(_) => return false,
-                            }
-                        }
-                    }
-                }
-                return true;
-            } else {
-                return false;
-            }
-        }
-
         fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
             self.total_supply += value;
-            let balance = self.balance_of(to, self.lp_token);
-            self.balances.insert((to, self.lp_token), balance + value);
+            let balance = self.lp_balance_of(to);
+            self.lp_balances.insert(to, balance + value);
             self.env().emit_event(Transfer {
                 from: None,
                 to: Some(to),
@@ -584,8 +461,8 @@ pub mod amm {
 
         fn _burn(&mut self, from: AccountId, value: Balance) -> Result<()> {
             self.total_supply -= value;
-            let balance = self.balance_of(from, self.lp_token);
-            self.balances.insert((from, self.lp_token), balance - value);
+            let balance = self.lp_balance_of(from);
+            self.lp_balances.insert(from, balance - value);
             self.env().emit_event(Transfer {
                 from: Some(from),
                 to: None,
@@ -638,8 +515,8 @@ pub mod amm {
             let initial_supply = 1_000;
             let pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
 
-            let contract_balance_0 = pair.reserve_0;
-            let contract_balance_1 = pair.reserve_1;
+            let contract_balance_0 = pair.reserve_usdc;
+            let contract_balance_1 = pair.reserve_eur;
             assert_eq!(contract_balance_0, contract_balance_1);
             assert_eq!(initial_supply, contract_balance_0);
         }
@@ -690,8 +567,8 @@ pub mod amm {
             );
 
             // check contract balances
-            let contract_balance_0_post_deposit = pair.reserve_0;
-            let contract_balance_1_post_deposit = pair.reserve_1;
+            let contract_balance_0_post_deposit = pair.reserve_usdc;
+            let contract_balance_1_post_deposit = pair.reserve_eur;
             assert_eq!(
                 contract_balance_0_post_deposit,
                 contract_balance_1_post_deposit
@@ -770,15 +647,15 @@ pub mod amm {
             let user_balance_1_pre_withdraw = pair.balance_of(to, TOKEN_1);
 
             let result = pair.withdraw(gained_lp, to);
-            let (amount_0, amount_1) = result.expect("Could not unwrap result");
+            let (amount_usdc, amount_eur) = result.expect("Could not unwrap result");
             assert_eq!(
                 true,
-                amount_0 > 0,
+                amount_usdc > 0,
                 "Expected received amount to be greater than 0"
             );
             assert_eq!(
                 true,
-                amount_1 > 0,
+                amount_eur > 0,
                 "Expected received amount to be greater than 0"
             );
 
@@ -787,11 +664,11 @@ pub mod amm {
 
             assert_eq!(
                 user_balance_0_post_withdraw,
-                user_balance_0_pre_withdraw + amount_0
+                user_balance_0_pre_withdraw + amount_usdc
             );
             assert_eq!(
                 user_balance_1_post_withdraw,
-                user_balance_1_pre_withdraw + amount_1
+                user_balance_1_pre_withdraw + amount_eur
             );
         }
 
@@ -819,16 +696,16 @@ pub mod amm {
             );
 
             let result = pair.withdraw(gained_lp, to);
-            let (amount_0, amount_1) = result.expect("Could not unwrap result");
+            let (amount_usdc, amount_eur) = result.expect("Could not unwrap result");
 
             let user_balance_0_post_withdraw = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_withdraw = pair.balance_of(to, TOKEN_1);
             assert_eq!(
-                amount_0, deposit_amount,
+                amount_usdc, deposit_amount,
                 "Expected withdrawn amount to be equal to deposited amount"
             );
             assert_eq!(
-                amount_1, deposit_amount,
+                amount_eur, deposit_amount,
                 "Expected withdrawn amount to be equal to deposited amount"
             );
         }
@@ -847,7 +724,7 @@ pub mod amm {
 
             let swap_amount = 100;
             let rate: f64 =
-                pair.reserve_0 as f64 / ((pair.reserve_1 as f64) - (swap_amount as f64));
+                pair.reserve_usdc as f64 / ((pair.reserve_eur as f64) - (swap_amount as f64));
             println!("Expected float conversion rate: {}", rate);
             let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
@@ -870,7 +747,7 @@ pub mod amm {
             );
 
             let rate: f64 =
-                pair.reserve_1 as f64 / ((pair.reserve_0 as f64) - (swap_amount as f64));
+                pair.reserve_eur as f64 / ((pair.reserve_usdc as f64) - (swap_amount as f64));
             println!("Expected exact float conversion rate: {}", rate);
             let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
@@ -912,7 +789,7 @@ pub mod amm {
 
             let swap_amount = 200_000;
             let rate: f64 =
-                pair.reserve_0 as f64 / ((pair.reserve_1 as f64) - (swap_amount as f64));
+                pair.reserve_usdc as f64 / ((pair.reserve_eur as f64) - (swap_amount as f64));
             println!("Expected float conversion rate: {}", rate);
             let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
@@ -939,7 +816,7 @@ pub mod amm {
             );
 
             let rate: f64 =
-                pair.reserve_1 as f64 / ((pair.reserve_0 as f64) - (swap_amount as f64));
+                pair.reserve_eur as f64 / ((pair.reserve_usdc as f64) - (swap_amount as f64));
             println!("Expected exact float conversion rate: {}", rate);
             let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
