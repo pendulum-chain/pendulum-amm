@@ -29,18 +29,20 @@ pub mod types {
     }
 }
 
+pub type TokenId = [u8; 12];
+pub type IssuerId = [u8; 32];
 #[ink::chain_extension]
 pub trait BalanceExtension {
     type ErrorCode = BalanceReadErr;
 
     #[ink(extension = 1101, returns_result = false)]
-    fn fetch_balance(owner: ink_env::AccountId, token: [u8; 4]) -> u128;
+    fn fetch_balance(owner: ink_env::AccountId, token: TokenId) -> u128;
 
     #[ink(extension = 1102, returns_result = false, handle_status = false)]
     fn transfer_balance(
         from: ink_env::AccountId,
         to: ink_env::AccountId,
-        token: [u8; 4],
+        token: TokenId,
         amount: u128,
     ) -> ();
 }
@@ -79,25 +81,19 @@ impl Environment for CustomEnvironment {
 }
 
 pub mod util {
-
-    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub enum Error {
-        AssetCodeTooLong,
-        InvalidAssetCodeCharacter,
-    }
-
-    pub fn asset_from_string(str: ink_prelude::string::String) -> Result<[u8; 12], Error> {
+    pub fn asset_from_string(
+        str: ink_prelude::string::String,
+    ) -> Result<[u8; 12], crate::amm::Error> {
         let str: &[u8] = str.as_ref();
         if str.len() > 12 {
-            return Err(Error::AssetCodeTooLong);
+            return Err(crate::amm::Error::AssetCodeTooLong);
         }
 
         if !str.iter().all(|char| {
             let char = char::from(*char);
             char.is_ascii_alphanumeric()
         }) {
-            return Err(Error::InvalidAssetCodeCharacter);
+            return Err(crate::amm::Error::InvalidAssetCodeCharacter);
         }
 
         let mut asset_code_array: [u8; 12] = [0; 12];
@@ -106,10 +102,194 @@ pub mod util {
     }
 }
 
-#[cfg(feature = "ink_metadata")]
+pub mod base32 {
+    use core::convert::AsRef;
+
+    #[cfg(not(feature = "ink-as-dependency"))]
+    use ink_storage::collections::Vec;
+
+    const ALPHABET: &'static [u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+    fn ascii_to_value_5bit(char: u8) -> Option<u8> {
+        match char as char {
+            'a'..='z' => Some(char - ('a' as u8)),
+            'A'..='Z' => Some(char - ('A' as u8)),
+            '2'..='7' => Some(char - ('2' as u8) + 26),
+            '0' => Some(14),
+            '1' => Some(8),
+            _ => None,
+        }
+    }
+
+    pub fn encode<T: AsRef<[u8]>>(binary: T) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let mut shift = 3;
+        let mut carry = 0;
+
+        for byte in binary.as_ref().iter() {
+            let value_5bit = if shift == 8 {
+                carry
+            } else {
+                carry | ((*byte) >> shift)
+            };
+            buffer.push(ALPHABET[(value_5bit & 0x1f) as usize]);
+
+            if shift > 5 {
+                shift -= 5;
+                let value_5bit = (*byte) >> shift;
+                buffer.push(ALPHABET[(value_5bit & 0x1f) as usize]);
+            }
+
+            shift = 5 - shift;
+            carry = *byte << shift;
+            shift = 8 - shift;
+        }
+
+        if shift != 3 {
+            buffer.push(ALPHABET[(carry & 0x1f) as usize]);
+        }
+
+        buffer
+    }
+
+    pub fn decode<T: AsRef<[u8]>>(string: T) -> Result<Vec<u8>, crate::amm::Error> {
+        let mut result = Vec::new();
+        let mut shift: i8 = 8;
+        let mut carry: u8 = 0;
+
+        for (position, ascii) in string.as_ref().iter().enumerate() {
+            if *ascii as char == '=' {
+                break;
+            }
+
+            let value_5bit = ascii_to_value_5bit(*ascii);
+            if let Some(value_5bit) = value_5bit {
+                shift -= 5;
+                if shift > 0 {
+                    carry |= value_5bit << shift;
+                } else if shift < 0 {
+                    result.push(carry | (value_5bit >> -shift));
+                    shift += 8;
+                    carry = value_5bit << shift;
+                } else {
+                    result.push(carry | value_5bit);
+                    shift = 8;
+                    carry = 0;
+                }
+            } else {
+                return Err(crate::amm::Error::InvalidBase32Character);
+            }
+        }
+
+        if shift != 8 && carry != 0 {
+            result.push(carry);
+        }
+
+        Ok(result)
+    }
+}
+
+pub mod key_encoding {
+    use super::base32::{decode, encode};
+    use core::convert::{AsRef, TryInto};
+
+    #[cfg(not(feature = "ink-as-dependency"))]
+    use ink_storage::collections::Vec;
+
+    pub const ED25519_PUBLIC_KEY_BYTE_LENGTH: usize = 32;
+    pub const ED25519_PUBLIC_KEY_VERSION_BYTE: u8 = 6 << 3; // G
+
+    pub const ED25519_SECRET_SEED_BYTE_LENGTH: usize = 32;
+    pub const ED25519_SECRET_SEED_VERSION_BYTE: u8 = 18 << 3; // S
+
+    pub const MED25519_PUBLIC_KEY_BYTE_LENGTH: usize = 40;
+    pub const MED25519_PUBLIC_KEY_VERSION_BYTE: u8 = 12 << 3; // M
+
+    /// Use Stellar's key encoding to decode a key given as an ASCII string (as `&[u8]`)
+    pub fn decode_stellar_key<T: AsRef<[u8]>>(
+        encoded_key: T,
+        version_byte: u8,
+    ) -> Result<[u8; 32], crate::amm::Error> {
+        let BYTE_LENGTH = ED25519_PUBLIC_KEY_BYTE_LENGTH;
+        let decoded_array = decode(encoded_key.as_ref())?;
+        // if *encoded_key.as_ref() != encode(&decoded_array)[..] {
+        //     return Err(crate::amm::Error::InvalidStellarKeyEncoding);
+        // }
+
+        let array_length: usize = decoded_array.len().try_into().unwrap();
+        println!("decoded_array: {:?}", decoded_array);
+        println!("array_length: {:?}", array_length);
+        if array_length != 3 + BYTE_LENGTH {
+            return Err(crate::amm::Error::InvalidStellarKeyEncodingLength);
+        }
+
+        // let crc_value = ((decoded_array[array_length - 1] as u16) << 8)
+        //     | decoded_array[array_length - 2] as u16;
+        // let expected_crc_value = crc(&decoded_array[..array_length - 2]);
+        // if crc_value != expected_crc_value {
+        //     return Err(crate::amm::Error::InvalidStellarKeyChecksum {
+        //         expected: expected_crc_value,
+        //         found: crc_value,
+        //     });
+        // }
+
+        let expected_version = version_byte;
+        if decoded_array[0] != expected_version {
+            return Err(crate::amm::Error::InvalidStellarKeyEncodingVersion);
+        }
+
+        let mut result: [u8; 32] = [0; 32];
+        for (i, (&x, p)) in decoded_array.iter().zip(result.iter_mut()).enumerate() {
+            if i > 1 && i <= array_length - 2 {
+                *p = x;
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Return the key encoding as an ASCII string (given as `Vec<u8>`)
+    pub fn encode_stellar_key<const BYTE_LENGTH: usize>(
+        key: &[u8; BYTE_LENGTH],
+        version_byte: u8,
+    ) -> Vec<u8> {
+        let mut unencoded_array = Vec::new();
+        // unencoded_array.push(version_byte);
+        // unencoded_array.extend(key.iter());
+
+        // let crc_value = crc(&unencoded_array);
+        // unencoded_array.push((crc_value & 0xff) as u8);
+        // unencoded_array.push((crc_value >> 8) as u8);
+
+        // encode(&unencoded_array)
+        unencoded_array
+    }
+
+    fn crc<T: AsRef<[u8]>>(byte_array: T) -> u16 {
+        let mut crc: u16 = 0;
+
+        for byte in byte_array.as_ref().iter() {
+            let mut code: u16 = crc >> 8 & 0xff;
+
+            code ^= *byte as u16;
+            code ^= code >> 4;
+            crc = (crc << 8) & 0xffff;
+            crc ^= code;
+            code = (code << 5) & 0xffff;
+            crc ^= code;
+            code = (code << 7) & 0xffff;
+            crc ^= code;
+        }
+
+        crc
+    }
+}
+
 #[ink::contract(env = crate::CustomEnvironment)]
 pub mod amm {
-    use crate::types::{Issuer, IssuerId, TokenId};
+    // use crate::types::{TokenId};
+    pub type TokenId = [u8; 12];
+    pub type IssuerId = [u8; 32];
 
     #[cfg(not(feature = "ink-as-dependency"))]
     #[allow(unused_imports)]
@@ -120,6 +300,9 @@ pub mod amm {
 
     use num_integer::sqrt;
 
+    use crate::key_encoding::{
+        decode_stellar_key, ED25519_PUBLIC_KEY_BYTE_LENGTH, ED25519_PUBLIC_KEY_VERSION_BYTE,
+    };
     use crate::util::asset_from_string;
 
     /// The ERC-20 error types.
@@ -146,6 +329,18 @@ pub mod amm {
         PairExists,
         AddressGenerationFailed,
         WithdrawWithoutSupply,
+
+        // -- mod errors
+        InvalidStellarKeyEncoding,
+        InvalidStellarKeyEncodingLength,
+        InvalidStellarKeyChecksum {
+            expected: u16,
+            found: u16,
+        },
+        InvalidStellarKeyEncodingVersion,
+        AssetCodeTooLong,
+        InvalidAssetCodeCharacter,
+        InvalidBase32Character,
     }
 
     /// The ERC-20 result type.
@@ -213,7 +408,6 @@ pub mod amm {
         token_1: TokenId,
         issuer_0: IssuerId,
         issuer_1: IssuerId,
-
         total_supply: Balance,
         /// Mapping from owner to number of owned token.
         lp_balances: StorageHashMap<AccountId, Balance>,
@@ -227,11 +421,16 @@ pub mod amm {
             let token_0 = asset_from_string(token_0).expect("Could not decode token_0");
             let token_1 = asset_from_string(token_1).expect("Could not decode token_1");
 
+            let issuer_0 = decode_stellar_key::<String>(issuer_0, ED25519_PUBLIC_KEY_VERSION_BYTE)
+                .expect("Could not decode issuer_0");
+            let issuer_1 = decode_stellar_key::<String>(issuer_1, ED25519_PUBLIC_KEY_VERSION_BYTE)
+                .expect("Could not decode issuer_1");
+
             let instance = Self {
                 token_0,
                 token_1,
-                issuer_0: Issuer(issuer_0),
-                issuer_1: Issuer(issuer_1),
+                issuer_0,
+                issuer_1,
                 reserve_0: 0,
                 reserve_1: 0,
                 total_supply: 0,
@@ -493,12 +692,12 @@ pub mod amm {
 
             self.env()
                 .extension()
-                .transfer_balance(from, to, token.into(), amount);
+                .transfer_balance(from, to, token, amount);
             Ok(())
         }
 
         pub fn balance_of(&self, owner: AccountId, token: TokenId) -> Balance {
-            let balance = match self.env().extension().fetch_balance(owner, token.into()) {
+            let balance = match self.env().extension().fetch_balance(owner, token) {
                 Ok(balance) => balance,
                 // Err(err) => Err(BalanceReadErr::FailGetBalance),
                 Err(_) => 0,
@@ -556,10 +755,16 @@ pub mod amm {
 
         use ink_lang as ink;
 
-        const TOKEN_0: TokenId = [0, 0, 0, 0];
-        const ISSUER_0: IssuerId = [1; 56];
-        const TOKEN_1: TokenId = [1, 1, 1, 1];
-        const ISSUER_1: IssuerId = [2; 56];
+        const TOKEN_0: TokenId = [0; 12];
+        const ISSUER_0: IssuerId = [1; 32];
+        const TOKEN_1: TokenId = [1; 12];
+        const ISSUER_1: IssuerId = [2; 32];
+
+        const TOKEN_0_STRING: &str = "EUR";
+        const ISSUER_0_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
+        const TOKEN_1_STRING: &str = "USDC";
+        const ISSUER_1_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
+
         struct MockedExtension;
         impl ink_env::test::ChainExtension for MockedExtension {
             /// The static function id of the chain extension.
@@ -586,7 +791,7 @@ pub mod amm {
         #[ink::test]
         fn new_works() {
             // Constructor works.
-            let pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let contract_balance_0 = pair.reserve_0;
             let contract_balance_1 = pair.reserve_1;
@@ -598,7 +803,7 @@ pub mod amm {
             ink_env::test::register_chain_extension(MockedExtension);
 
             let to = AccountId::from([0x01; 32]);
-            let pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
             println!("balance of: balance: {}", pair.balance_of(to, TOKEN_0));
             assert_eq!(pair.balance_of(to, TOKEN_0), 0);
         }
@@ -609,7 +814,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let deposit_amount = 100;
 
@@ -656,7 +861,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             pair.swap(TOKEN_0, 100, to).expect("Swap did not work");
 
@@ -686,7 +891,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let result = pair.withdraw(1, to);
             assert_eq!(Err(Error::WithdrawWithoutSupply), result);
@@ -703,7 +908,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let deposit_amount = 5_000_00;
             let result = pair.deposit(deposit_amount, TOKEN_0, to);
@@ -749,7 +954,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let deposit_amount = 5_000_00;
             // do initial deposit which initiates total_supply
@@ -787,7 +992,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
@@ -852,7 +1057,7 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, ISSUER_0, TOKEN_1, ISSUER_1);
+            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
