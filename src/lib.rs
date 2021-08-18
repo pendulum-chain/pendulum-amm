@@ -121,12 +121,12 @@ pub mod base32 {
         }
     }
 
-    pub fn encode<T: AsRef<[u8]>>(binary: T) -> Vec<u8> {
+    pub fn encode(binary: &Vec<u8>) -> Vec<u8> {
         let mut buffer = Vec::new();
         let mut shift = 3;
         let mut carry = 0;
 
-        for byte in binary.as_ref().iter() {
+        for byte in binary.iter() {
             let value_5bit = if shift == 8 {
                 carry
             } else {
@@ -217,8 +217,6 @@ pub mod key_encoding {
         // }
 
         let array_length: usize = decoded_array.len().try_into().unwrap();
-        println!("decoded_array: {:?}", decoded_array);
-        println!("array_length: {:?}", array_length);
         if array_length != 3 + BYTE_LENGTH {
             return Err(crate::amm::Error::InvalidStellarKeyEncodingLength);
         }
@@ -239,10 +237,10 @@ pub mod key_encoding {
         }
 
         let mut result: [u8; 32] = [0; 32];
-        for (i, (&x, p)) in decoded_array.iter().zip(result.iter_mut()).enumerate() {
-            if i > 1 && i <= array_length - 2 {
-                *p = x;
-            }
+        let mut array_iter = decoded_array.iter();
+        array_iter.next(); // skip over first element
+        for (&x, p) in array_iter.zip(result.iter_mut()) {
+            *p = x;
         }
 
         Ok(result)
@@ -254,21 +252,22 @@ pub mod key_encoding {
         version_byte: u8,
     ) -> Vec<u8> {
         let mut unencoded_array = Vec::new();
-        // unencoded_array.push(version_byte);
-        // unencoded_array.extend(key.iter());
+        unencoded_array.push(version_byte);
+        for el in key.iter() {
+            unencoded_array.push(*el);
+        }
 
-        // let crc_value = crc(&unencoded_array);
-        // unencoded_array.push((crc_value & 0xff) as u8);
-        // unencoded_array.push((crc_value >> 8) as u8);
+        let crc_value = crc(&unencoded_array);
+        unencoded_array.push((crc_value & 0xff) as u8);
+        unencoded_array.push((crc_value >> 8) as u8);
 
-        // encode(&unencoded_array)
-        unencoded_array
+        encode(&unencoded_array)
     }
 
-    fn crc<T: AsRef<[u8]>>(byte_array: T) -> u16 {
+    fn crc(byte_array: &Vec<u8>) -> u16 {
         let mut crc: u16 = 0;
 
-        for byte in byte_array.as_ref().iter() {
+        for byte in byte_array.iter() {
             let mut code: u16 = crc >> 8 & 0xff;
 
             code ^= *byte as u16;
@@ -282,6 +281,14 @@ pub mod key_encoding {
         }
 
         crc
+    }
+
+    pub fn vec_to_array<const ARRAY_LENGTH: usize>(vec: Vec<u8>) -> [u8; ARRAY_LENGTH] {
+        let mut result: [u8; ARRAY_LENGTH] = [0; ARRAY_LENGTH];
+        for (i, (&x, p)) in vec.iter().zip(result.iter_mut()).enumerate() {
+            *p = x;
+        }
+        result
     }
 }
 
@@ -301,7 +308,8 @@ pub mod amm {
     use num_integer::sqrt;
 
     use crate::key_encoding::{
-        decode_stellar_key, ED25519_PUBLIC_KEY_BYTE_LENGTH, ED25519_PUBLIC_KEY_VERSION_BYTE,
+        decode_stellar_key, encode_stellar_key, vec_to_array, ED25519_PUBLIC_KEY_BYTE_LENGTH,
+        ED25519_PUBLIC_KEY_VERSION_BYTE,
     };
     use crate::util::asset_from_string;
 
@@ -465,8 +473,28 @@ pub mod amm {
         }
 
         #[ink(message)]
+        pub fn issuer_0(&self) -> String {
+            let issuer_0_encoded =
+                encode_stellar_key(&self.issuer_0, ED25519_PUBLIC_KEY_VERSION_BYTE);
+
+            let issuer_array = vec_to_array::<56>(issuer_0_encoded);
+
+            return String::from_utf8(issuer_array.to_vec()).unwrap();
+        }
+
+        #[ink(message)]
         pub fn token_1(&self) -> String {
             return String::from_utf8(self.token_1.to_vec()).unwrap();
+        }
+
+        #[ink(message)]
+        pub fn issuer_1(&self) -> String {
+            let issuer_1_encoded =
+                encode_stellar_key(&self.issuer_1, ED25519_PUBLIC_KEY_VERSION_BYTE);
+
+            let issuer_array = vec_to_array::<56>(issuer_1_encoded);
+
+            return String::from_utf8(issuer_array.to_vec()).unwrap();
         }
 
         #[ink(message)]
@@ -791,7 +819,12 @@ pub mod amm {
         #[ink::test]
         fn new_works() {
             // Constructor works.
-            let pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let contract_balance_0 = pair.reserve_0;
             let contract_balance_1 = pair.reserve_1;
@@ -799,11 +832,32 @@ pub mod amm {
         }
 
         #[ink::test]
+        fn issuer_0_works() {
+            // Constructor works.
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
+
+            assert_eq!(
+                pair.issuer_0(),
+                "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF"
+            );
+        }
+
+        #[ink::test]
         fn balance_of_works() {
             ink_env::test::register_chain_extension(MockedExtension);
 
             let to = AccountId::from([0x01; 32]);
-            let pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
             println!("balance of: balance: {}", pair.balance_of(to, TOKEN_0));
             assert_eq!(pair.balance_of(to, TOKEN_0), 0);
         }
@@ -814,7 +868,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let deposit_amount = 100;
 
@@ -861,7 +920,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             pair.swap(TOKEN_0, 100, to).expect("Swap did not work");
 
@@ -891,7 +955,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let result = pair.withdraw(1, to);
             assert_eq!(Err(Error::WithdrawWithoutSupply), result);
@@ -908,7 +977,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let deposit_amount = 5_000_00;
             let result = pair.deposit(deposit_amount, TOKEN_0, to);
@@ -954,7 +1028,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let deposit_amount = 5_000_00;
             // do initial deposit which initiates total_supply
@@ -992,7 +1071,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
@@ -1057,7 +1141,12 @@ pub mod amm {
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0_STRING.to_string(), ISSUER_0_STRING.to_string(), TOKEN_1_STRING.to_string(), ISSUER_1_STRING.to_string());
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
