@@ -3,34 +3,9 @@
 use ink_env::Environment;
 use ink_lang as ink;
 
-#[cfg(feature = "ink_metadata")]
-pub mod types {
-    pub type TokenId = [u8; 12];
-    pub type IssuerId = [u8; 32];
-
-    use ink_metadata::layout::{ArrayLayout, Layout, LayoutKey};
-    use ink_primitives::KeyPtr;
-    use ink_storage::traits::{ExtKeyPtr, SpreadLayout, StorageLayout};
-    #[derive(Debug, SpreadLayout, PartialEq, Eq, scale::Encode, scale::Decode)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub struct Issuer(pub [u8; 56]);
-
-    impl StorageLayout for Issuer {
-        fn layout(key_ptr: &mut KeyPtr) -> Layout {
-            let elem_footprint = <u8 as SpreadLayout>::FOOTPRINT;
-
-            Layout::Array(ArrayLayout::new(
-                LayoutKey::from(key_ptr.next_for::<[u8; 56]>()),
-                56,
-                elem_footprint,
-                <u8 as StorageLayout>::layout(&mut key_ptr.clone()),
-            ))
-        }
-    }
-}
-
 pub type TokenId = [u8; 12];
 pub type IssuerId = [u8; 32];
+
 #[ink::chain_extension]
 pub trait BalanceExtension {
     type ErrorCode = BalanceReadErr;
@@ -81,9 +56,11 @@ impl Environment for CustomEnvironment {
 }
 
 pub mod util {
+    use crate::TokenId;
+
     pub fn asset_from_string(
         str: ink_prelude::string::String,
-    ) -> Result<[u8; 12], crate::amm::Error> {
+    ) -> Result<TokenId, crate::amm::Error> {
         let str: &[u8] = str.as_ref();
         if str.len() > 12 {
             return Err(crate::amm::Error::AssetCodeTooLong);
@@ -96,7 +73,7 @@ pub mod util {
             return Err(crate::amm::Error::InvalidAssetCodeCharacter);
         }
 
-        let mut asset_code_array: [u8; 12] = [0; 12];
+        let mut asset_code_array: TokenId = [0; 12];
         asset_code_array[..str.len()].copy_from_slice(str);
         Ok(asset_code_array)
     }
@@ -294,9 +271,6 @@ pub mod key_encoding {
 
 #[ink::contract(env = crate::CustomEnvironment)]
 pub mod amm {
-    // use crate::types::{TokenId};
-    pub type TokenId = [u8; 12];
-    pub type IssuerId = [u8; 32];
 
     #[cfg(not(feature = "ink-as-dependency"))]
     #[allow(unused_imports)]
@@ -308,10 +282,10 @@ pub mod amm {
     use num_integer::sqrt;
 
     use crate::key_encoding::{
-        decode_stellar_key, encode_stellar_key, vec_to_array, ED25519_PUBLIC_KEY_BYTE_LENGTH,
-        ED25519_PUBLIC_KEY_VERSION_BYTE,
+        decode_stellar_key, encode_stellar_key, vec_to_array, ED25519_PUBLIC_KEY_VERSION_BYTE,
     };
     use crate::util::asset_from_string;
+    use crate::{IssuerId, TokenId};
 
     /// The ERC-20 error types.
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -354,7 +328,6 @@ pub mod amm {
     /// The ERC-20 result type.
     pub type Result<T> = core::result::Result<T, Error>;
 
-    //type TokenId = [u8; 4];
     const MINIMUM_LIQUIDITY: u128 = 1;
     const ACCURACY_MULTIPLIER: u128 = 1_000;
 
