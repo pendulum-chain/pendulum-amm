@@ -56,21 +56,20 @@ impl Environment for CustomEnvironment {
 }
 
 pub mod util {
+    use crate::amm::Error;
     use crate::TokenId;
 
-    pub fn asset_from_string(
-        str: ink_prelude::string::String,
-    ) -> Result<TokenId, crate::amm::Error> {
+    pub fn asset_from_string(str: ink_prelude::string::String) -> Result<TokenId, Error> {
         let str: &[u8] = str.as_ref();
         if str.len() > 12 {
-            return Err(crate::amm::Error::AssetCodeTooLong);
+            return Err(Error::AssetCodeTooLong);
         }
 
         if !str.iter().all(|char| {
             let char = char::from(*char);
             char.is_ascii_alphanumeric()
         }) {
-            return Err(crate::amm::Error::InvalidAssetCodeCharacter);
+            return Err(Error::InvalidAssetCodeCharacter);
         }
 
         let mut asset_code_array: TokenId = [0; 12];
@@ -83,7 +82,9 @@ pub mod base32 {
     use core::convert::AsRef;
 
     #[cfg(not(feature = "ink-as-dependency"))]
-    use ink_storage::collections::Vec;
+    use ink_prelude::vec::Vec;
+
+    use crate::amm::Error;
 
     const ALPHABET: &'static [u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -98,12 +99,12 @@ pub mod base32 {
         }
     }
 
-    pub fn encode(binary: &Vec<u8>) -> Vec<u8> {
-        let mut buffer = Vec::new();
+    pub fn encode<T: AsRef<[u8]>>(binary: T) -> Vec<u8> {
+        let mut buffer = Vec::with_capacity(binary.as_ref().len() * 2);
         let mut shift = 3;
         let mut carry = 0;
 
-        for byte in binary.iter() {
+        for byte in binary.as_ref().iter() {
             let value_5bit = if shift == 8 {
                 carry
             } else {
@@ -129,12 +130,12 @@ pub mod base32 {
         buffer
     }
 
-    pub fn decode<T: AsRef<[u8]>>(string: T) -> Result<Vec<u8>, crate::amm::Error> {
-        let mut result = Vec::new();
+    pub fn decode<T: AsRef<[u8]>>(string: T) -> Result<Vec<u8>, Error> {
+        let mut result = Vec::with_capacity(string.as_ref().len());
         let mut shift: i8 = 8;
         let mut carry: u8 = 0;
 
-        for (position, ascii) in string.as_ref().iter().enumerate() {
+        for ascii in string.as_ref().iter() {
             if *ascii as char == '=' {
                 break;
             }
@@ -154,7 +155,7 @@ pub mod base32 {
                     carry = 0;
                 }
             } else {
-                return Err(crate::amm::Error::InvalidBase32Character);
+                return Err(Error::InvalidBase32Character);
             }
         }
 
@@ -171,7 +172,9 @@ pub mod key_encoding {
     use core::convert::{AsRef, TryInto};
 
     #[cfg(not(feature = "ink-as-dependency"))]
-    use ink_storage::collections::Vec;
+    use ink_prelude::vec::Vec;
+
+    use crate::amm::Error;
 
     pub const ED25519_PUBLIC_KEY_BYTE_LENGTH: usize = 32;
     pub const ED25519_PUBLIC_KEY_VERSION_BYTE: u8 = 6 << 3; // G
@@ -183,44 +186,36 @@ pub mod key_encoding {
     pub const MED25519_PUBLIC_KEY_VERSION_BYTE: u8 = 12 << 3; // M
 
     /// Use Stellar's key encoding to decode a key given as an ASCII string (as `&[u8]`)
-    pub fn decode_stellar_key<T: AsRef<[u8]>>(
+    pub fn decode_stellar_key<T: AsRef<[u8]>, const BYTE_LENGTH: usize>(
         encoded_key: T,
         version_byte: u8,
-    ) -> Result<[u8; 32], crate::amm::Error> {
-        let BYTE_LENGTH = ED25519_PUBLIC_KEY_BYTE_LENGTH;
+    ) -> Result<[u8; BYTE_LENGTH], Error> {
         let decoded_array = decode(encoded_key.as_ref())?;
-        // if *encoded_key.as_ref() != encode(&decoded_array)[..] {
-        //     return Err(crate::amm::Error::InvalidStellarKeyEncoding);
-        // }
-
-        let array_length: usize = decoded_array.len().try_into().unwrap();
-        if array_length != 3 + BYTE_LENGTH {
-            return Err(crate::amm::Error::InvalidStellarKeyEncodingLength);
+        if *encoded_key.as_ref() != encode(&decoded_array)[..] {
+            return Err(Error::InvalidStellarKeyEncoding);
         }
 
-        // let crc_value = ((decoded_array[array_length - 1] as u16) << 8)
-        //     | decoded_array[array_length - 2] as u16;
-        // let expected_crc_value = crc(&decoded_array[..array_length - 2]);
-        // if crc_value != expected_crc_value {
-        //     return Err(crate::amm::Error::InvalidStellarKeyChecksum {
-        //         expected: expected_crc_value,
-        //         found: crc_value,
-        //     });
-        // }
+        let array_length = decoded_array.len();
+        if array_length != 3 + BYTE_LENGTH {
+            return Err(Error::InvalidStellarKeyEncodingLength);
+        }
+
+        let crc_value = ((decoded_array[array_length - 1] as u16) << 8)
+            | decoded_array[array_length - 2] as u16;
+        let expected_crc_value = crc(&decoded_array[..array_length - 2]);
+        if crc_value != expected_crc_value {
+            return Err(Error::InvalidStellarKeyChecksum {
+                expected: expected_crc_value,
+                found: crc_value,
+            });
+        }
 
         let expected_version = version_byte;
         if decoded_array[0] != expected_version {
-            return Err(crate::amm::Error::InvalidStellarKeyEncodingVersion);
+            return Err(Error::InvalidStellarKeyEncodingVersion);
         }
 
-        let mut result: [u8; 32] = [0; 32];
-        let mut array_iter = decoded_array.iter();
-        array_iter.next(); // skip over first element
-        for (&x, p) in array_iter.zip(result.iter_mut()) {
-            *p = x;
-        }
-
-        Ok(result)
+        Ok(decoded_array[1..array_length - 2].try_into().unwrap())
     }
 
     /// Return the key encoding as an ASCII string (given as `Vec<u8>`)
@@ -228,11 +223,9 @@ pub mod key_encoding {
         key: &[u8; BYTE_LENGTH],
         version_byte: u8,
     ) -> Vec<u8> {
-        let mut unencoded_array = Vec::new();
+        let mut unencoded_array = Vec::with_capacity(3 + BYTE_LENGTH);
         unencoded_array.push(version_byte);
-        for el in key.iter() {
-            unencoded_array.push(*el);
-        }
+        unencoded_array.extend(key.iter());
 
         let crc_value = crc(&unencoded_array);
         unencoded_array.push((crc_value & 0xff) as u8);
@@ -241,10 +234,10 @@ pub mod key_encoding {
         encode(&unencoded_array)
     }
 
-    fn crc(byte_array: &Vec<u8>) -> u16 {
+    fn crc<T: AsRef<[u8]>>(byte_array: T) -> u16 {
         let mut crc: u16 = 0;
 
-        for byte in byte_array.iter() {
+        for byte in byte_array.as_ref().iter() {
             let mut code: u16 = crc >> 8 & 0xff;
 
             code ^= *byte as u16;
@@ -262,7 +255,7 @@ pub mod key_encoding {
 
     pub fn vec_to_array<const ARRAY_LENGTH: usize>(vec: Vec<u8>) -> [u8; ARRAY_LENGTH] {
         let mut result: [u8; ARRAY_LENGTH] = [0; ARRAY_LENGTH];
-        for (i, (&x, p)) in vec.iter().zip(result.iter_mut()).enumerate() {
+        for (&x, p) in vec.iter().zip(result.iter_mut()) {
             *p = x;
         }
         result
@@ -282,7 +275,8 @@ pub mod amm {
     use num_integer::sqrt;
 
     use crate::key_encoding::{
-        decode_stellar_key, encode_stellar_key, vec_to_array, ED25519_PUBLIC_KEY_VERSION_BYTE,
+        decode_stellar_key, encode_stellar_key, vec_to_array, ED25519_PUBLIC_KEY_BYTE_LENGTH,
+        ED25519_PUBLIC_KEY_VERSION_BYTE,
     };
     use crate::util::asset_from_string;
     use crate::{IssuerId, TokenId};
@@ -402,10 +396,16 @@ pub mod amm {
             let token_0 = asset_from_string(token_0).expect("Could not decode token_0");
             let token_1 = asset_from_string(token_1).expect("Could not decode token_1");
 
-            let issuer_0 = decode_stellar_key::<String>(issuer_0, ED25519_PUBLIC_KEY_VERSION_BYTE)
-                .expect("Could not decode issuer_0");
-            let issuer_1 = decode_stellar_key::<String>(issuer_1, ED25519_PUBLIC_KEY_VERSION_BYTE)
-                .expect("Could not decode issuer_1");
+            let issuer_0 = decode_stellar_key::<String, ED25519_PUBLIC_KEY_BYTE_LENGTH>(
+                issuer_0,
+                ED25519_PUBLIC_KEY_VERSION_BYTE,
+            )
+            .expect("Could not decode issuer_0");
+            let issuer_1 = decode_stellar_key::<String, ED25519_PUBLIC_KEY_BYTE_LENGTH>(
+                issuer_1,
+                ED25519_PUBLIC_KEY_VERSION_BYTE,
+            )
+            .expect("Could not decode issuer_1");
 
             let instance = Self {
                 token_0,
@@ -611,6 +611,9 @@ pub mod amm {
             });
             Ok((amount_0, amount_1))
         }
+
+        // token_1 and token_2
+        // two different swap functions
 
         #[ink(message)]
         pub fn swap(
