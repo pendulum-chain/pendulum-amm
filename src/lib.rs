@@ -59,6 +59,9 @@ pub mod util {
     use crate::amm::Error;
     use crate::TokenId;
 
+    #[cfg(not(feature = "ink-as-dependency"))]
+    use ink_prelude::vec::Vec;
+
     pub fn asset_from_string(str: ink_prelude::string::String) -> Result<TokenId, Error> {
         let str: &[u8] = str.as_ref();
         if str.len() > 12 {
@@ -75,6 +78,23 @@ pub mod util {
         let mut asset_code_array: TokenId = [0; 12];
         asset_code_array[..str.len()].copy_from_slice(str);
         Ok(asset_code_array)
+    }
+
+    pub fn vec_to_array<const ARRAY_LENGTH: usize>(vec: Vec<u8>) -> [u8; ARRAY_LENGTH] {
+        let mut result: [u8; ARRAY_LENGTH] = [0; ARRAY_LENGTH];
+        for (&x, p) in vec.iter().zip(result.iter_mut()) {
+            *p = x;
+        }
+        result
+    }
+
+    pub fn trim_zeros(x: &[u8]) -> &[u8] {
+        let from = match x.iter().position(|&x| x != 0) {
+            Some(i) => i,
+            None => return &x[0..0],
+        };
+        let to = x.iter().rposition(|&x| x != 0).unwrap();
+        &x[from..=to]
     }
 }
 
@@ -252,14 +272,6 @@ pub mod key_encoding {
 
         crc
     }
-
-    pub fn vec_to_array<const ARRAY_LENGTH: usize>(vec: Vec<u8>) -> [u8; ARRAY_LENGTH] {
-        let mut result: [u8; ARRAY_LENGTH] = [0; ARRAY_LENGTH];
-        for (&x, p) in vec.iter().zip(result.iter_mut()) {
-            *p = x;
-        }
-        result
-    }
 }
 
 #[ink::contract(env = crate::CustomEnvironment)]
@@ -275,10 +287,10 @@ pub mod amm {
     use num_integer::sqrt;
 
     use crate::key_encoding::{
-        decode_stellar_key, encode_stellar_key, vec_to_array, ED25519_PUBLIC_KEY_BYTE_LENGTH,
+        decode_stellar_key, encode_stellar_key, ED25519_PUBLIC_KEY_BYTE_LENGTH,
         ED25519_PUBLIC_KEY_VERSION_BYTE,
     };
-    use crate::util::asset_from_string;
+    use crate::util::{asset_from_string, trim_zeros, vec_to_array};
     use crate::{IssuerId, TokenId};
 
     /// The ERC-20 error types.
@@ -441,12 +453,12 @@ pub mod amm {
         }
 
         #[ink(message)]
-        pub fn token_0(&self) -> String {
-            return String::from_utf8(self.token_0.to_vec()).unwrap();
+        pub fn token_1(&self) -> String {
+            return String::from_utf8(trim_zeros(&self.token_0).to_vec()).unwrap();
         }
 
         #[ink(message)]
-        pub fn issuer_0(&self) -> String {
+        pub fn issuer_1(&self) -> String {
             let issuer_0_encoded =
                 encode_stellar_key(&self.issuer_0, ED25519_PUBLIC_KEY_VERSION_BYTE);
 
@@ -456,12 +468,12 @@ pub mod amm {
         }
 
         #[ink(message)]
-        pub fn token_1(&self) -> String {
-            return String::from_utf8(self.token_1.to_vec()).unwrap();
+        pub fn token_2(&self) -> String {
+            return String::from_utf8(trim_zeros(&self.token_1).to_vec()).unwrap();
         }
 
         #[ink(message)]
-        pub fn issuer_1(&self) -> String {
+        pub fn issuer_2(&self) -> String {
             let issuer_1_encoded =
                 encode_stellar_key(&self.issuer_1, ED25519_PUBLIC_KEY_VERSION_BYTE);
 
@@ -808,7 +820,7 @@ pub mod amm {
         }
 
         #[ink::test]
-        fn issuer_0_works() {
+        fn issuer_1_works() {
             // Constructor works.
             let pair = Pair::new(
                 TOKEN_0_STRING.to_string(),
@@ -818,7 +830,7 @@ pub mod amm {
             );
 
             assert_eq!(
-                pair.issuer_0(),
+                pair.issuer_1(),
                 "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF"
             );
         }
