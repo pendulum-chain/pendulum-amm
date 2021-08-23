@@ -5,19 +5,20 @@ use ink_lang as ink;
 
 pub type TokenId = [u8; 12];
 pub type IssuerId = [u8; 32];
+pub type Token = (IssuerId, TokenId);
 
 #[ink::chain_extension]
 pub trait BalanceExtension {
     type ErrorCode = BalanceReadErr;
 
     #[ink(extension = 1101, returns_result = false)]
-    fn fetch_balance(owner: ink_env::AccountId, token: TokenId) -> u128;
+    fn fetch_balance(owner: ink_env::AccountId, token: Token) -> u128;
 
     #[ink(extension = 1102, returns_result = false, handle_status = false)]
     fn transfer_balance(
         from: ink_env::AccountId,
         to: ink_env::AccountId,
-        token: TokenId,
+        token: Token,
         amount: u128,
     ) -> ();
 }
@@ -291,7 +292,7 @@ pub mod amm {
         ED25519_PUBLIC_KEY_VERSION_BYTE,
     };
     use crate::util::{asset_from_string, trim_zeros, vec_to_array};
-    use crate::{IssuerId, TokenId};
+    use crate::Token;
 
     /// The ERC-20 error types.
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -391,10 +392,8 @@ pub mod amm {
         reserve_0: Balance,
         reserve_1: Balance,
 
-        token_0: TokenId,
-        token_1: TokenId,
-        issuer_0: IssuerId,
-        issuer_1: IssuerId,
+        token_0: Token,
+        token_1: Token,
         total_supply: Balance,
         /// Mapping from owner to number of owned token.
         lp_balances: StorageHashMap<AccountId, Balance>,
@@ -402,11 +401,18 @@ pub mod amm {
 
     impl Pair {
         #[ink(constructor)]
-        pub fn new(token_0: String, issuer_0: String, token_1: String, issuer_1: String) -> Self {
+        pub fn new(
+            token_code_0: String,
+            issuer_0: String,
+            token_code_1: String,
+            issuer_1: String,
+        ) -> Self {
             let caller = Self::env().caller();
 
-            let token_0 = asset_from_string(token_0).expect("Could not decode token_0");
-            let token_1 = asset_from_string(token_1).expect("Could not decode token_1");
+            let token_code_0 =
+                asset_from_string(token_code_0).expect("Could not decode token_code_0");
+            let token_code_1 =
+                asset_from_string(token_code_1).expect("Could not decode token_code_1");
 
             let issuer_0 = decode_stellar_key::<String, ED25519_PUBLIC_KEY_BYTE_LENGTH>(
                 issuer_0,
@@ -420,10 +426,8 @@ pub mod amm {
             .expect("Could not decode issuer_1");
 
             let instance = Self {
-                token_0,
-                token_1,
-                issuer_0,
-                issuer_1,
+                token_0: (issuer_0, token_code_0),
+                token_1: (issuer_1, token_code_1),
                 reserve_0: 0,
                 reserve_1: 0,
                 total_supply: 0,
@@ -454,32 +458,28 @@ pub mod amm {
 
         #[ink(message)]
         pub fn token_1(&self) -> String {
-            return String::from_utf8(trim_zeros(&self.token_0).to_vec()).unwrap();
+            String::from_utf8(trim_zeros(&self.token_0.1).to_vec()).unwrap()
         }
 
         #[ink(message)]
         pub fn issuer_1(&self) -> String {
             let issuer_0_encoded =
-                encode_stellar_key(&self.issuer_0, ED25519_PUBLIC_KEY_VERSION_BYTE);
+                encode_stellar_key(&self.token_0.0, ED25519_PUBLIC_KEY_VERSION_BYTE);
 
-            let issuer_array = vec_to_array::<56>(issuer_0_encoded);
-
-            return String::from_utf8(issuer_array.to_vec()).unwrap();
+            String::from_utf8(issuer_0_encoded).unwrap()
         }
 
         #[ink(message)]
         pub fn token_2(&self) -> String {
-            return String::from_utf8(trim_zeros(&self.token_1).to_vec()).unwrap();
+            String::from_utf8(trim_zeros(&self.token_1.1).to_vec()).unwrap()
         }
 
         #[ink(message)]
         pub fn issuer_2(&self) -> String {
             let issuer_1_encoded =
-                encode_stellar_key(&self.issuer_1, ED25519_PUBLIC_KEY_VERSION_BYTE);
+                encode_stellar_key(&self.token_1.0, ED25519_PUBLIC_KEY_VERSION_BYTE);
 
-            let issuer_array = vec_to_array::<56>(issuer_1_encoded);
-
-            return String::from_utf8(issuer_array.to_vec()).unwrap();
+            String::from_utf8(issuer_1_encoded).unwrap()
         }
 
         #[ink(message)]
@@ -493,44 +493,47 @@ pub mod amm {
         }
 
         #[ink(message)]
-        pub fn deposit(
-            &mut self,
-            amount: Balance,
-            token: TokenId,
-            to: AccountId,
-        ) -> Result<Balance> {
+        pub fn deposit_token_1(&mut self, amount: Balance) -> Result<Balance> {
+            let caller = self.env().caller();
+            self.deposit(amount, self.token_0, caller)
+        }
+
+        #[ink(message)]
+        pub fn deposit_token_2(&mut self, amount: Balance) -> Result<Balance> {
+            let caller = self.env().caller();
+            self.deposit(amount, self.token_1, caller)
+        }
+
+        fn deposit(&mut self, amount: Balance, token: Token, to: AccountId) -> Result<Balance> {
             let contract = self.env().account_id();
-            // let from = self.env().caller();
             let from = to;
 
             let token_0 = self.token_0;
             let token_1 = self.token_1;
-            if token != token_0 && token != token_1 {
-                return Err(Error::InvalidDepositToken);
-            }
 
             let (reserve_0, reserve_1) = self.get_reserves();
 
             let balance_0 = self.balance_of(contract, token_0);
             let balance_1 = self.balance_of(contract, token_1);
 
-            let (amount_0, amount_1) = match token {
-                token_0 => (
+            let (amount_0, amount_1) = if token == token_0 {
+                (
                     amount,
                     if balance_0 > 0 {
                         amount * balance_1 / balance_0
                     } else {
                         amount
                     },
-                ),
-                token_1 => (
+                )
+            } else {
+                (
                     if balance_1 > 0 {
                         amount * balance_0 / balance_1
                     } else {
                         amount
                     },
                     amount,
-                ),
+                )
             };
 
             let user_balance_0 = self.balance_of(from, token_0);
@@ -624,67 +627,61 @@ pub mod amm {
             Ok((amount_0, amount_1))
         }
 
-        // token_1 and token_2
-        // two different swap functions
+        #[ink(message)]
+        pub fn swap_token_1_for_token_2(&mut self, amount_to_receive: Balance) -> Result<()> {
+            let caller = self.env().caller();
+            self._swap(caller, amount_to_receive, self.token_1)
+        }
 
         #[ink(message)]
-        pub fn swap(
-            &mut self,
-            token_to_receive: TokenId,
-            amount: Balance,
-            to: AccountId,
-        ) -> Result<()> {
-            // let from = self.env().caller();
-            let from = to;
-            if token_to_receive != self.token_0 && token_to_receive != self.token_1 {
-                return Err(Error::InvalidSwapToken);
-            } else {
-                return self._swap(from, amount, token_to_receive);
-            }
+        pub fn swap_token_2_for_token_1(&mut self, amount_to_receive: Balance) -> Result<()> {
+            let caller = self.env().caller();
+            self._swap(caller, amount_to_receive, self.token_0)
         }
 
         fn _swap(
             &mut self,
             from: AccountId,
             amount_to_receive: Balance,
-            token_to_receive: TokenId,
+            token_to_receive: Token,
         ) -> Result<()> {
             if amount_to_receive <= 0 {
                 return Err(Error::InsufficientOutputAmount);
             }
 
+            let token_0 = self.token_0;
+            let token_1 = self.token_1;
+
             let (reserve_0, reserve_1) = self.get_reserves();
-            if match token_to_receive {
-                token_0 => amount_to_receive > reserve_0,
-                token_1 => amount_to_receive > reserve_1,
-            } {
+            if token_to_receive == token_0 && amount_to_receive > reserve_0 {
+                return Err(Error::InsufficientLiquidity);
+            } else if token_to_receive == token_1 && amount_to_receive > reserve_1 {
                 return Err(Error::InsufficientLiquidity);
             }
 
             let contract = self.env().account_id();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            let balance_usdc = self.balance_of(contract, token_0);
-            let balance_eur = self.balance_of(contract, token_1);
+            let balance_0 = self.balance_of(contract, token_0);
+            let balance_1 = self.balance_of(contract, token_1);
 
-            let (amount_to_send, token_to_send) = match token_to_receive {
-                token_0 => (
-                    amount_to_receive * balance_eur / (balance_usdc - amount_to_receive),
+            let (amount_to_send, token_to_send) = if token_to_receive == token_0 {
+                (
+                    amount_to_receive * balance_1 / (balance_0 - amount_to_receive),
                     token_1,
-                ),
-                token_1 => (
-                    amount_to_receive * balance_usdc / (balance_eur - amount_to_receive),
+                )
+            } else {
+                (
+                    amount_to_receive * balance_0 / (balance_1 - amount_to_receive),
                     token_0,
-                ),
+                )
             };
 
             self.transfer_tokens(from, contract, token_to_send, amount_to_send)?;
             self.transfer_tokens(contract, from, token_to_receive, amount_to_receive)?;
 
-            let balance_usdc = self.balance_of(contract, token_0);
-            let balance_eur = self.balance_of(contract, token_1);
+            let balance_0 = self.balance_of(contract, token_0);
+            let balance_1 = self.balance_of(contract, token_1);
 
-            self._update(balance_usdc, balance_eur, reserve_0, reserve_1)?;
+            self._update(balance_0, balance_1, reserve_0, reserve_1)?;
             self.env().emit_event(Swap {
                 sender: self.env().caller(),
                 to: from,
@@ -698,7 +695,7 @@ pub mod amm {
             &mut self,
             from: AccountId,
             to: AccountId,
-            token: TokenId,
+            token: Token,
             amount: Balance,
         ) -> Result<()> {
             let from_balance = self.balance_of(from, token);
@@ -712,7 +709,7 @@ pub mod amm {
             Ok(())
         }
 
-        pub fn balance_of(&self, owner: AccountId, token: TokenId) -> Balance {
+        pub fn balance_of(&self, owner: AccountId, token: Token) -> Balance {
             let balance = match self.env().extension().fetch_balance(owner, token) {
                 Ok(balance) => balance,
                 // Err(err) => Err(BalanceReadErr::FailGetBalance),
@@ -771,10 +768,8 @@ pub mod amm {
 
         use ink_lang as ink;
 
-        const TOKEN_0: TokenId = [0; 12];
-        const ISSUER_0: IssuerId = [1; 32];
-        const TOKEN_1: TokenId = [1; 12];
-        const ISSUER_1: IssuerId = [2; 32];
+        const TOKEN_0: Token = ([0; 32], [0; 12]);
+        const TOKEN_1: Token = ([1; 32], [1; 12]);
 
         const TOKEN_0_STRING: &str = "EUR";
         const ISSUER_0_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
@@ -817,6 +812,19 @@ pub mod amm {
             let contract_balance_0 = pair.reserve_0;
             let contract_balance_1 = pair.reserve_1;
             assert_eq!(contract_balance_0, contract_balance_1);
+        }
+
+        #[ink::test]
+        fn token_1_works() {
+            // Constructor works.
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
+
+            assert_eq!(pair.token_1(), "EUR");
         }
 
         #[ink::test]
@@ -915,7 +923,8 @@ pub mod amm {
                 ISSUER_1_STRING.to_string(),
             );
 
-            pair.swap(TOKEN_0, 100, to).expect("Swap did not work");
+            pair.swap_token_2_for_token_1(100)
+                .expect("Swap did not work");
 
             let deposit_amount = 100;
             let user_balance_0_pre_deposit = pair.balance_of(to, TOKEN_0);
@@ -1081,7 +1090,7 @@ pub mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(TOKEN_0, swap_amount, to);
+            let result = pair.swap_token_2_for_token_1(swap_amount);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
@@ -1104,7 +1113,7 @@ pub mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(TOKEN_1, swap_amount, to);
+            let result = pair.swap_token_1_for_token_2(swap_amount);
             result.expect("Encountered error in swap");
 
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
@@ -1151,7 +1160,7 @@ pub mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(TOKEN_0, swap_amount, to);
+            let result = pair.swap_token_2_for_token_1(swap_amount);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
@@ -1177,7 +1186,7 @@ pub mod amm {
                 "Balances pre swap: {}, {}",
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
-            let result = pair.swap(TOKEN_1, swap_amount, to);
+            let result = pair.swap_token_2_for_token_1(swap_amount);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
