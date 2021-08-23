@@ -81,14 +81,6 @@ pub mod util {
         Ok(asset_code_array)
     }
 
-    pub fn vec_to_array<const ARRAY_LENGTH: usize>(vec: Vec<u8>) -> [u8; ARRAY_LENGTH] {
-        let mut result: [u8; ARRAY_LENGTH] = [0; ARRAY_LENGTH];
-        for (&x, p) in vec.iter().zip(result.iter_mut()) {
-            *p = x;
-        }
-        result
-    }
-
     pub fn trim_zeros(x: &[u8]) -> &[u8] {
         let from = match x.iter().position(|&x| x != 0) {
             Some(i) => i,
@@ -720,13 +712,13 @@ pub mod amm {
 
         fn _update(
             &mut self,
-            balance_usdc: Balance,
-            balance_eur: Balance,
+            balance_0: Balance,
+            balance_1: Balance,
             reserve_0: Balance,
             reserve_1: Balance,
         ) -> Result<()> {
-            self.reserve_0 = balance_usdc;
-            self.reserve_1 = balance_eur;
+            self.reserve_0 = balance_0;
+            self.reserve_1 = balance_1;
             self.env().emit_event(Sync {
                 reserve_0,
                 reserve_1,
