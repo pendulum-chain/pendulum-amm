@@ -1,16 +1,287 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use ink_env::Environment;
 use ink_lang as ink;
 
-#[ink::contract]
-mod amm {
+pub type AssetCode = [u8; 12];
+pub type IssuerId = [u8; 32]; // encoded 32-bit array of 56 character stellar issuer (public key)
+pub type Asset = (IssuerId, AssetCode);
+
+#[ink::chain_extension]
+pub trait BalanceExtension {
+    type ErrorCode = BalanceReadErr;
+
+    #[ink(extension = 1101, returns_result = false)]
+    fn fetch_balance(owner: ink_env::AccountId, asset: Asset) -> u128;
+
+    #[ink(extension = 1102, returns_result = false, handle_status = false)]
+    fn transfer_balance(
+        from: ink_env::AccountId,
+        to: ink_env::AccountId,
+        asset: Asset,
+        amount: u128,
+    ) -> ();
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+pub enum BalanceReadErr {
+    FailGetBalance,
+}
+
+impl ink_env::chain_extension::FromStatusCode for BalanceReadErr {
+    fn from_status_code(status_code: u32) -> Result<(), Self> {
+        match status_code {
+            0 => Ok(()),
+            1 => Err(Self::FailGetBalance),
+            _ => panic!("encountered unknown status code"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+pub enum CustomEnvironment {}
+
+impl Environment for CustomEnvironment {
+    const MAX_EVENT_TOPICS: usize = <ink_env::DefaultEnvironment as Environment>::MAX_EVENT_TOPICS;
+
+    type AccountId = <ink_env::DefaultEnvironment as Environment>::AccountId;
+    type Balance = <ink_env::DefaultEnvironment as Environment>::Balance;
+    type Hash = <ink_env::DefaultEnvironment as Environment>::Hash;
+    type BlockNumber = <ink_env::DefaultEnvironment as Environment>::BlockNumber;
+    type Timestamp = <ink_env::DefaultEnvironment as Environment>::Timestamp;
+    type RentFraction = <ink_env::DefaultEnvironment as Environment>::RentFraction;
+
+    type ChainExtension = BalanceExtension;
+}
+
+pub mod util {
+    use crate::amm::Error;
+    use crate::AssetCode;
+
+    pub fn asset_from_string(str: ink_prelude::string::String) -> Result<AssetCode, Error> {
+        let str: &[u8] = str.as_ref();
+        if str.len() > 12 {
+            return Err(Error::AssetCodeTooLong);
+        }
+
+        if !str.iter().all(|char| {
+            let char = char::from(*char);
+            char.is_ascii_alphanumeric()
+        }) {
+            return Err(Error::InvalidAssetCodeCharacter);
+        }
+
+        let mut asset_code_array: AssetCode = [0; 12];
+        asset_code_array[..str.len()].copy_from_slice(str);
+        Ok(asset_code_array)
+    }
+
+    pub fn trim_zeros(x: &[u8]) -> &[u8] {
+        let from = match x.iter().position(|&x| x != 0) {
+            Some(i) => i,
+            None => return &x[0..0],
+        };
+        let to = x.iter().rposition(|&x| x != 0).unwrap();
+        &x[from..=to]
+    }
+}
+
+pub mod base32 {
+    use core::convert::AsRef;
+
     #[cfg(not(feature = "ink-as-dependency"))]
+    use ink_prelude::vec::Vec;
+
+    use crate::amm::Error;
+
+    const ALPHABET: &'static [u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+    fn ascii_to_value_5bit(char: u8) -> Option<u8> {
+        match char as char {
+            'a'..='z' => Some(char - ('a' as u8)),
+            'A'..='Z' => Some(char - ('A' as u8)),
+            '2'..='7' => Some(char - ('2' as u8) + 26),
+            '0' => Some(14),
+            '1' => Some(8),
+            _ => None,
+        }
+    }
+
+    pub fn encode<T: AsRef<[u8]>>(binary: T) -> Vec<u8> {
+        let mut buffer = Vec::with_capacity(binary.as_ref().len() * 2);
+        let mut shift = 3;
+        let mut carry = 0;
+
+        for byte in binary.as_ref().iter() {
+            let value_5bit = if shift == 8 {
+                carry
+            } else {
+                carry | ((*byte) >> shift)
+            };
+            buffer.push(ALPHABET[(value_5bit & 0x1f) as usize]);
+
+            if shift > 5 {
+                shift -= 5;
+                let value_5bit = (*byte) >> shift;
+                buffer.push(ALPHABET[(value_5bit & 0x1f) as usize]);
+            }
+
+            shift = 5 - shift;
+            carry = *byte << shift;
+            shift = 8 - shift;
+        }
+
+        if shift != 3 {
+            buffer.push(ALPHABET[(carry & 0x1f) as usize]);
+        }
+
+        buffer
+    }
+
+    pub fn decode<T: AsRef<[u8]>>(string: T) -> Result<Vec<u8>, Error> {
+        let mut result = Vec::with_capacity(string.as_ref().len());
+        let mut shift: i8 = 8;
+        let mut carry: u8 = 0;
+
+        for ascii in string.as_ref().iter() {
+            if *ascii as char == '=' {
+                break;
+            }
+
+            let value_5bit = ascii_to_value_5bit(*ascii);
+            if let Some(value_5bit) = value_5bit {
+                shift -= 5;
+                if shift > 0 {
+                    carry |= value_5bit << shift;
+                } else if shift < 0 {
+                    result.push(carry | (value_5bit >> -shift));
+                    shift += 8;
+                    carry = value_5bit << shift;
+                } else {
+                    result.push(carry | value_5bit);
+                    shift = 8;
+                    carry = 0;
+                }
+            } else {
+                return Err(Error::InvalidBase32Character);
+            }
+        }
+
+        if shift != 8 && carry != 0 {
+            result.push(carry);
+        }
+
+        Ok(result)
+    }
+}
+
+pub mod key_encoding {
+    use super::base32::{decode, encode};
+    use core::convert::{AsRef, TryInto};
+
+    #[cfg(not(feature = "ink-as-dependency"))]
+    use ink_prelude::vec::Vec;
+
+    use crate::amm::Error;
+
+    pub const ED25519_PUBLIC_KEY_BYTE_LENGTH: usize = 32;
+    pub const ED25519_PUBLIC_KEY_VERSION_BYTE: u8 = 6 << 3; // G
+
+    pub const ED25519_SECRET_SEED_BYTE_LENGTH: usize = 32;
+    pub const ED25519_SECRET_SEED_VERSION_BYTE: u8 = 18 << 3; // S
+
+    pub const MED25519_PUBLIC_KEY_BYTE_LENGTH: usize = 40;
+    pub const MED25519_PUBLIC_KEY_VERSION_BYTE: u8 = 12 << 3; // M
+
+    /// Use Stellar's key encoding to decode a key given as an ASCII string (as `&[u8]`)
+    pub fn decode_stellar_key<T: AsRef<[u8]>, const BYTE_LENGTH: usize>(
+        encoded_key: T,
+        version_byte: u8,
+    ) -> Result<[u8; BYTE_LENGTH], Error> {
+        let decoded_array = decode(encoded_key.as_ref())?;
+        if *encoded_key.as_ref() != encode(&decoded_array)[..] {
+            return Err(Error::InvalidStellarKeyEncoding);
+        }
+
+        let array_length = decoded_array.len();
+        if array_length != 3 + BYTE_LENGTH {
+            return Err(Error::InvalidStellarKeyEncodingLength);
+        }
+
+        let crc_value = ((decoded_array[array_length - 1] as u16) << 8)
+            | decoded_array[array_length - 2] as u16;
+        let expected_crc_value = crc(&decoded_array[..array_length - 2]);
+        if crc_value != expected_crc_value {
+            return Err(Error::InvalidStellarKeyChecksum {
+                expected: expected_crc_value,
+                found: crc_value,
+            });
+        }
+
+        let expected_version = version_byte;
+        if decoded_array[0] != expected_version {
+            return Err(Error::InvalidStellarKeyEncodingVersion);
+        }
+
+        Ok(decoded_array[1..array_length - 2].try_into().unwrap())
+    }
+
+    /// Return the key encoding as an ASCII string (given as `Vec<u8>`)
+    pub fn encode_stellar_key<const BYTE_LENGTH: usize>(
+        key: &[u8; BYTE_LENGTH],
+        version_byte: u8,
+    ) -> Vec<u8> {
+        let mut unencoded_array = Vec::with_capacity(3 + BYTE_LENGTH);
+        unencoded_array.push(version_byte);
+        unencoded_array.extend(key.iter());
+
+        let crc_value = crc(&unencoded_array);
+        unencoded_array.push((crc_value & 0xff) as u8);
+        unencoded_array.push((crc_value >> 8) as u8);
+
+        encode(&unencoded_array)
+    }
+
+    fn crc<T: AsRef<[u8]>>(byte_array: T) -> u16 {
+        let mut crc: u16 = 0;
+
+        for byte in byte_array.as_ref().iter() {
+            let mut code: u16 = crc >> 8 & 0xff;
+
+            code ^= *byte as u16;
+            code ^= code >> 4;
+            crc = (crc << 8) & 0xffff;
+            crc ^= code;
+            code = (code << 5) & 0xffff;
+            crc ^= code;
+            code = (code << 7) & 0xffff;
+            crc ^= code;
+        }
+
+        crc
+    }
+}
+
+#[ink::contract(env = crate::CustomEnvironment)]
+pub mod amm {
+
+    #[cfg(not(feature = "ink-as-dependency"))]
+    #[allow(unused_imports)]
     use ink_prelude::string::String;
 
     #[cfg(not(feature = "ink-as-dependency"))]
     use ink_storage::collections::HashMap as StorageHashMap;
 
     use num_integer::sqrt;
+
+    use crate::key_encoding::{
+        decode_stellar_key, encode_stellar_key, ED25519_PUBLIC_KEY_BYTE_LENGTH,
+        ED25519_PUBLIC_KEY_VERSION_BYTE,
+    };
+    use crate::util::{asset_from_string, trim_zeros};
+    use crate::Asset;
 
     /// The ERC-20 error types.
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -36,12 +307,23 @@ mod amm {
         PairExists,
         AddressGenerationFailed,
         WithdrawWithoutSupply,
+
+        // -- mod errors
+        InvalidStellarKeyEncoding,
+        InvalidStellarKeyEncodingLength,
+        InvalidStellarKeyChecksum {
+            expected: u16,
+            found: u16,
+        },
+        InvalidStellarKeyEncodingVersion,
+        AssetCodeTooLong,
+        InvalidAssetCodeCharacter,
+        InvalidBase32Character,
     }
 
     /// The ERC-20 result type.
     pub type Result<T> = core::result::Result<T, Error>;
 
-    type TokenId = [u8; 4];
     const MINIMUM_LIQUIDITY: u128 = 1;
     const ACCURACY_MULTIPLIER: u128 = 1_000;
 
@@ -82,10 +364,8 @@ mod amm {
         sender: AccountId,
         #[ink(topic)]
         to: AccountId,
-        amount_0_in: Balance,
-        amount_1_in: Balance,
-        amount_0_out: Balance,
-        amount_1_out: Balance,
+        amount_to_send: Balance,
+        amount_to_receive: Balance,
     }
 
     #[ink(event)]
@@ -98,80 +378,57 @@ mod amm {
 
     #[ink(storage)]
     pub struct Pair {
-        token_0: TokenId,
-        token_1: TokenId,
-        lp_token: TokenId,
-
         reserve_0: Balance,
         reserve_1: Balance,
-        block_timestamp_last: Timestamp,
 
-        price_0_cumulative_last: Balance,
-        price_1_cumulative_last: Balance,
-        k_last: Balance, // reserve0 * reserve1, as of immediately after the most recent liquidity event
-
-        unlocked: u32,
-
-        fee_to: Option<AccountId>, // address of account that receives fee
-
+        asset_0: Asset,
+        asset_1: Asset,
         total_supply: Balance,
         /// Mapping from owner to number of owned token.
-        balances: StorageHashMap<(AccountId, TokenId), Balance>,
+        lp_balances: StorageHashMap<AccountId, Balance>,
     }
 
     impl Pair {
         #[ink(constructor)]
         pub fn new(
-            token_0: TokenId,
-            initial_supply_0: Balance,
-            token_1: TokenId,
-            initial_supply_1: Balance,
-            lp_token: TokenId,
+            asset_code_0: String,
+            issuer_0: String,
+            asset_code_1: String,
+            issuer_1: String,
         ) -> Self {
             let caller = Self::env().caller();
-            let contract = Self::env().account_id();
-            let mut balances = StorageHashMap::new();
-            balances.insert((caller, token_0), initial_supply_0);
-            balances.insert((caller, token_1), initial_supply_1);
-            balances.insert((contract, token_0), initial_supply_0);
-            balances.insert((contract, token_1), initial_supply_1);
+
+            let asset_code_0 =
+                asset_from_string(asset_code_0).expect("Could not decode asset_code_0");
+            let asset_code_1 =
+                asset_from_string(asset_code_1).expect("Could not decode asset_code_1");
+
+            let issuer_0 = decode_stellar_key::<String, ED25519_PUBLIC_KEY_BYTE_LENGTH>(
+                issuer_0,
+                ED25519_PUBLIC_KEY_VERSION_BYTE,
+            )
+            .expect("Could not decode issuer_0");
+            let issuer_1 = decode_stellar_key::<String, ED25519_PUBLIC_KEY_BYTE_LENGTH>(
+                issuer_1,
+                ED25519_PUBLIC_KEY_VERSION_BYTE,
+            )
+            .expect("Could not decode issuer_1");
 
             let instance = Self {
+                asset_0: (issuer_0, asset_code_0),
+                asset_1: (issuer_1, asset_code_1),
+                reserve_0: 0,
+                reserve_1: 0,
                 total_supply: 0,
-                balances,
-                token_0,
-                token_1,
-                lp_token,
-                reserve_0: initial_supply_0,
-                reserve_1: initial_supply_1,
-                block_timestamp_last: 0,
-                price_0_cumulative_last: 0,
-                price_1_cumulative_last: 0,
-                k_last: 0,
-                unlocked: 1,
-                fee_to: None,
+                lp_balances: Default::default(),
             };
+
             Self::env().emit_event(Transfer {
                 from: None,
                 to: Some(caller),
-                value: initial_supply_0 + initial_supply_1,
+                value: 0,
             });
             instance
-        }
-
-        #[ink(message)]
-        pub fn token_0(&self) -> String {
-            return String::from_utf8(self.token_0.to_vec()).unwrap();
-        }
-
-        #[ink(message)]
-        pub fn token_1(&self) -> String {
-            return String::from_utf8(self.token_1.to_vec()).unwrap();
-        }
-
-        #[ink(message)]
-        pub fn lp_token(&self) -> String {
-            return String::from_utf8(self.lp_token.to_vec()).unwrap();
         }
 
         /// Returns the total token supply.
@@ -184,52 +441,34 @@ mod amm {
         ///
         /// Returns `0` if the account is non-existent.
         #[ink(message)]
-        pub fn balance_of(&self, owner: AccountId, token: TokenId) -> Balance {
-            self.balances.get(&(owner, token)).copied().unwrap_or(0)
+        pub fn lp_balance_of(&self, owner: AccountId) -> Balance {
+            *self.lp_balances.get(&owner).unwrap_or(&0)
         }
 
-        /// Transfers `value` amount of tokens from the caller's account to account `to`.
-        ///
-        /// On success a `Transfer` event is emitted.
-        ///
-        /// # Errors
-        ///
-        /// Returns `InsufficientBalance` error if there are not enough tokens on
-        /// the caller's account balance.
-        // #[ink(message)]
-        pub fn transfer(&mut self, to: AccountId, token: TokenId, value: Balance) -> Result<()> {
-            let from = self.env().caller();
-            self.transfer_from_to(from, to, token, value)
+        #[ink(message)]
+        pub fn asset_1(&self) -> String {
+            String::from_utf8(trim_zeros(&self.asset_0.1).to_vec()).unwrap()
         }
 
-        /// Transfers `value` amount of tokens from the caller's account to account `to`.
-        ///
-        /// On success a `Transfer` event is emitted.
-        ///
-        /// # Errors
-        ///
-        /// Returns `InsufficientBalance` error if there are not enough tokens on
-        /// the caller's account balance.
-        fn transfer_from_to(
-            &mut self,
-            from: AccountId,
-            to: AccountId,
-            token: TokenId,
-            value: Balance,
-        ) -> Result<()> {
-            let from_balance = self.balance_of(from, token);
-            if from_balance < value {
-                return Err(Error::InsufficientBalance);
-            }
-            self.balances.insert((from, token), from_balance - value);
-            let to_balance = self.balance_of(to, token);
-            self.balances.insert((to, token), to_balance + value);
-            self.env().emit_event(Transfer {
-                from: Some(from),
-                to: Some(to),
-                value,
-            });
-            Ok(())
+        #[ink(message)]
+        pub fn issuer_1(&self) -> String {
+            let issuer_0_encoded =
+                encode_stellar_key(&self.asset_0.0, ED25519_PUBLIC_KEY_VERSION_BYTE);
+
+            String::from_utf8(issuer_0_encoded).unwrap()
+        }
+
+        #[ink(message)]
+        pub fn asset_2(&self) -> String {
+            String::from_utf8(trim_zeros(&self.asset_1.1).to_vec()).unwrap()
+        }
+
+        #[ink(message)]
+        pub fn issuer_2(&self) -> String {
+            let issuer_1_encoded =
+                encode_stellar_key(&self.asset_1.0, ED25519_PUBLIC_KEY_VERSION_BYTE);
+
+            String::from_utf8(issuer_1_encoded).unwrap()
         }
 
         #[ink(message)]
@@ -238,40 +477,56 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn get_reserves(&self) -> (Balance, Balance, Timestamp) {
-            return (self.reserve_0, self.reserve_1, self.block_timestamp_last);
+        pub fn get_reserves(&self) -> (Balance, Balance) {
+            return (self.reserve_0, self.reserve_1);
         }
 
         #[ink(message)]
-        pub fn deposit(
-            &mut self,
-            amount: Balance,
-            token: TokenId,
-            from: AccountId,
-        ) -> Result<Balance> {
+        pub fn deposit_asset_1(&mut self, amount: Balance) -> Result<Balance> {
+            let caller = self.env().caller();
+            self.deposit(amount, self.asset_0, caller)
+        }
+
+        #[ink(message)]
+        pub fn deposit_asset_2(&mut self, amount: Balance) -> Result<Balance> {
+            let caller = self.env().caller();
+            self.deposit(amount, self.asset_1, caller)
+        }
+
+        fn deposit(&mut self, amount: Balance, asset: Asset, to: AccountId) -> Result<Balance> {
             let contract = self.env().account_id();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            if token != token_0 && token != token_1 {
-                return Err(Error::InvalidDepositToken);
-            }
+            let from = to;
 
-            let (reserve_0, reserve_1, _) = self.get_reserves();
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
-            let amount_0 = if token == token_0 {
-                amount
+            let asset_0 = self.asset_0;
+            let asset_1 = self.asset_1;
+
+            let (reserve_0, reserve_1) = self.get_reserves();
+
+            let balance_0 = self.balance_of(contract, asset_0);
+            let balance_1 = self.balance_of(contract, asset_1);
+
+            let (amount_0, amount_1) = if asset == asset_0 {
+                (
+                    amount,
+                    if balance_0 > 0 {
+                        amount * balance_1 / balance_0
+                    } else {
+                        amount
+                    },
+                )
             } else {
-                amount * balance_0 / balance_1
-            };
-            let amount_1 = if token == token_0 {
-                amount * balance_1 / balance_0
-            } else {
-                amount
+                (
+                    if balance_1 > 0 {
+                        amount * balance_0 / balance_1
+                    } else {
+                        amount
+                    },
+                    amount,
+                )
             };
 
-            let user_balance_0 = self.balance_of(from, token_0);
-            let user_balance_1 = self.balance_of(from, token_1);
+            let user_balance_0 = self.balance_of(from, asset_0);
+            let user_balance_1 = self.balance_of(from, asset_1);
             if amount_0 > user_balance_0 {
                 return Err(Error::InsufficientBalance0);
             }
@@ -279,7 +534,6 @@ mod amm {
                 return Err(Error::InsufficientBalance1);
             }
 
-            let fee_on = self._mint_fee(reserve_0, reserve_1);
             let total_supply = self.total_supply;
             let liquidity: Balance;
             if total_supply == 0 {
@@ -299,16 +553,13 @@ mod amm {
                 return Err(Error::InsufficientLiquidityMinted);
             }
 
-            self.transfer_from_to(from, contract, token_0, amount_0)?;
-            self.transfer_from_to(from, contract, token_1, amount_1)?;
+            self.transfer_tokens(from, contract, asset_0, amount_0)?;
+            self.transfer_tokens(from, contract, asset_1, amount_1)?;
             self._mint(from, liquidity)?;
 
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let balance_0 = self.balance_of(contract, asset_0);
+            let balance_1 = self.balance_of(contract, asset_1);
             self._update(balance_0, balance_1, reserve_0, reserve_1)?;
-            if fee_on {
-                self.k_last = reserve_0 * reserve_1;
-            }
 
             self.env().emit_event(Mint {
                 sender: self.env().caller(),
@@ -326,19 +577,18 @@ mod amm {
                 return Err(Error::WithdrawWithoutSupply);
             }
 
-            let user_lp_balance = self.balance_of(to, self.lp_token);
+            let user_lp_balance = self.lp_balance_of(to);
             if user_lp_balance < amount {
                 return Err(Error::InsufficientLiquidityBalance);
             }
 
             let contract = self.env().account_id();
-            let (reserve_0, reserve_1, _) = self.get_reserves();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let (reserve_0, reserve_1) = self.get_reserves();
+            let asset_0 = self.asset_0;
+            let asset_1 = self.asset_1;
+            let balance_0 = self.balance_of(contract, asset_0);
+            let balance_1 = self.balance_of(contract, asset_1);
 
-            let fee_on = self._mint_fee(reserve_0, reserve_1);
             // rescale amounts with ACCURACY_MULTIPLIER to return proper amounts
             let amount_0 = amount * balance_0
                 / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
@@ -348,17 +598,15 @@ mod amm {
             if !(amount_0 > 0 || amount_1 > 0) {
                 return Err(Error::InsufficientLiquidityBurned);
             }
-            self.transfer_from_to(contract, to, token_0, amount_0)?;
-            self.transfer_from_to(contract, to, token_1, amount_1)?;
+
+            self.transfer_tokens(contract, to, asset_0, amount_0)?;
+            self.transfer_tokens(contract, to, asset_1, amount_1)?;
             self._burn(to, amount)?;
 
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
-
+            let balance_0 = self.balance_of(contract, asset_0);
+            let balance_1 = self.balance_of(contract, asset_1);
             self._update(balance_0, balance_1, reserve_0, reserve_1)?;
-            if fee_on {
-                self.k_last = reserve_0 * reserve_1;
-            }
+
             self.env().emit_event(Burn {
                 sender: self.env().caller(),
                 amount_0,
@@ -369,101 +617,94 @@ mod amm {
         }
 
         #[ink(message)]
-        pub fn swap(&mut self, token_to_receive: TokenId, amount: Balance, account: AccountId) -> Result<()> {
-            if token_to_receive == self.token_0 {
-                return self._swap(amount, 0, account);
-            } else if token_to_receive == self.token_1 {
-                return self._swap(0, amount, account);
-            } else {
-                return Err(Error::InvalidSwapToken);
-            }
+        pub fn swap_asset_1_for_asset_2(&mut self, amount_to_receive: Balance) -> Result<()> {
+            let caller = self.env().caller();
+            self._swap(caller, amount_to_receive, self.asset_1)
+        }
+
+        #[ink(message)]
+        pub fn swap_asset_2_for_asset_1(&mut self, amount_to_receive: Balance) -> Result<()> {
+            let caller = self.env().caller();
+            self._swap(caller, amount_to_receive, self.asset_0)
         }
 
         fn _swap(
             &mut self,
-            amount_0_out: Balance,
-            amount_1_out: Balance,
-            to: AccountId,
+            from: AccountId,
+            amount_to_receive: Balance,
+            asset_to_receive: Asset,
         ) -> Result<()> {
-            if !(amount_0_out > 0 || amount_1_out > 0) {
+            if amount_to_receive <= 0 {
                 return Err(Error::InsufficientOutputAmount);
             }
-            let (reserve_0, reserve_1, _) = self.get_reserves();
-            if amount_0_out > reserve_0 || amount_1_out > reserve_1 {
+
+            let asset_0 = self.asset_0;
+            let asset_1 = self.asset_1;
+
+            let (reserve_0, reserve_1) = self.get_reserves();
+            if asset_to_receive == asset_0 && amount_to_receive > reserve_0 {
+                return Err(Error::InsufficientLiquidity);
+            } else if asset_to_receive == asset_1 && amount_to_receive > reserve_1 {
                 return Err(Error::InsufficientLiquidity);
             }
 
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-
             let contract = self.env().account_id();
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let balance_0 = self.balance_of(contract, asset_0);
+            let balance_1 = self.balance_of(contract, asset_1);
 
-            let amount_0_in = if balance_0 > reserve_0 - amount_0_out {
-                balance_0 - (reserve_0 - amount_0_out)
+            let (amount_to_send, asset_to_send) = if asset_to_receive == asset_0 {
+                (
+                    amount_to_receive * balance_1 / (balance_0 - amount_to_receive),
+                    asset_1,
+                )
             } else {
-                0
-            };
-            let amount_1_in = if balance_1 > reserve_1 - amount_1_out {
-                balance_1 - (reserve_1 - amount_1_out)
-            } else {
-                0
+                (
+                    amount_to_receive * balance_0 / (balance_1 - amount_to_receive),
+                    asset_0,
+                )
             };
 
-            if !(amount_0_in > 0 || amount_1_in > 0) {
-                return Err(Error::InsufficientInputAmount);
-            }
-            if amount_0_out > 0 {
-                let converted_amount_in = amount_0_out * balance_0 / (balance_1 - amount_0_out);
-                self.transfer_from_to(to, contract, token_1, converted_amount_in)?;
-                self.transfer_from_to(contract, to, token_0, amount_0_out)?;
-            }
-            if amount_1_out > 0 {
-                let converted_amount_in = amount_1_out * balance_1 / (balance_0 - amount_1_out);
-                self.transfer_from_to(to, contract, token_0, converted_amount_in)?;
-                self.transfer_from_to(contract, to, token_1, amount_1_out)?;
-            }
+            self.transfer_tokens(from, contract, asset_to_send, amount_to_send)?;
+            self.transfer_tokens(contract, from, asset_to_receive, amount_to_receive)?;
 
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
+            let balance_0 = self.balance_of(contract, asset_0);
+            let balance_1 = self.balance_of(contract, asset_1);
 
             self._update(balance_0, balance_1, reserve_0, reserve_1)?;
             self.env().emit_event(Swap {
                 sender: self.env().caller(),
-                amount_0_in,
-                amount_1_in,
-                amount_0_out,
-                amount_1_out,
-                to,
+                to: from,
+                amount_to_send,
+                amount_to_receive,
             });
             Ok(())
         }
 
-        /// force balances to match reserves
-        #[ink(message)]
-        pub fn skim(&mut self, to: AccountId) -> Result<()> {
-            let contract = self.env().account_id();
-            let token_0 = self.token_0;
-            let token_1 = self.token_1;
-            let balance_0 = self.balance_of(contract, token_0);
-            let balance_1 = self.balance_of(contract, token_1);
-            self.transfer_from_to(contract, to, token_0, balance_0 - self.reserve_0)?;
-            self.transfer_from_to(contract, to, token_1, balance_1 - self.reserve_1)?;
+        pub fn transfer_tokens(
+            &mut self,
+            from: AccountId,
+            to: AccountId,
+            asset: Asset,
+            amount: Balance,
+        ) -> Result<()> {
+            let from_balance = self.balance_of(from, asset);
+            if from_balance < amount {
+                return Err(Error::InsufficientBalance);
+            }
 
+            self.env()
+                .extension()
+                .transfer_balance(from, to, asset, amount);
             Ok(())
         }
 
-        #[ink(message)]
-        pub fn sync(&mut self) -> Result<()> {
-            let contract = self.env().account_id();
-            self._update(
-                self.balance_of(contract, self.token_0),
-                self.balance_of(contract, self.token_1),
-                self.reserve_0,
-                self.reserve_1,
-            )?;
-            Ok(())
+        pub fn balance_of(&self, owner: AccountId, asset: Asset) -> Balance {
+            let balance = match self.env().extension().fetch_balance(owner, asset) {
+                Ok(balance) => balance,
+                // Err(err) => Err(BalanceReadErr::FailGetBalance),
+                Err(_) => 0,
+            };
+            return balance;
         }
 
         fn _update(
@@ -473,16 +714,8 @@ mod amm {
             reserve_0: Balance,
             reserve_1: Balance,
         ) -> Result<()> {
-            let block_timestamp = self.env().block_timestamp();
-            let time_elapsed: u128 = (block_timestamp - self.block_timestamp_last).into();
-
-            if time_elapsed > 0 && reserve_0 != 0 && reserve_1 != 0 {
-                self.price_0_cumulative_last += reserve_1 * time_elapsed / reserve_0;
-                self.price_1_cumulative_last += reserve_0 * time_elapsed / reserve_1;
-            }
             self.reserve_0 = balance_0;
             self.reserve_1 = balance_1;
-            self.block_timestamp_last = block_timestamp;
             self.env().emit_event(Sync {
                 reserve_0,
                 reserve_1,
@@ -490,34 +723,10 @@ mod amm {
             Ok(())
         }
 
-        fn _mint_fee(&mut self, reserve_0: Balance, reserve_1: Balance) -> bool {
-            let fee_to = self.fee_to;
-            if let Some(account) = fee_to {
-                if self.k_last != 0 {
-                    let root_k = sqrt(reserve_0 * reserve_1);
-                    let root_k_last = sqrt(self.k_last);
-                    if root_k > root_k_last {
-                        let numerator = self.total_supply * (root_k - root_k_last);
-                        let denominator = root_k * 5 + root_k_last;
-                        let liquidity = numerator / denominator;
-                        if liquidity > 0 {
-                            match self._mint(account, liquidity) {
-                                Ok(_) => return true,
-                                Err(_) => return false,
-                            }
-                        }
-                    }
-                }
-                return true;
-            } else {
-                return false;
-            }
-        }
-
         fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
             self.total_supply += value;
-            let balance = self.balance_of(to, self.lp_token);
-            self.balances.insert((to, self.lp_token), balance + value);
+            let balance = self.lp_balance_of(to);
+            self.lp_balances.insert(to, balance + value);
             self.env().emit_event(Transfer {
                 from: None,
                 to: Some(to),
@@ -528,8 +737,8 @@ mod amm {
 
         fn _burn(&mut self, from: AccountId, value: Balance) -> Result<()> {
             self.total_supply -= value;
-            let balance = self.balance_of(from, self.lp_token);
-            self.balances.insert((from, self.lp_token), balance - value);
+            let balance = self.lp_balance_of(from);
+            self.lp_balances.insert(from, balance - value);
             self.env().emit_event(Transfer {
                 from: Some(from),
                 to: None,
@@ -546,33 +755,110 @@ mod amm {
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
-        type Event = <Pair as ::ink_lang::BaseEvent>::Type;
-
         use ink_lang as ink;
 
-        const TOKEN_0: TokenId = [0, 0, 0, 0];
-        const TOKEN_1: TokenId = [1, 1, 1, 1];
-        const LP_TOKEN: TokenId = [2, 2, 2, 2];
+        const TOKEN_0: Asset = ([0; 32], [0; 12]);
+        const TOKEN_1: Asset = ([1; 32], [1; 12]);
+
+        const TOKEN_0_STRING: &str = "EUR";
+        const ISSUER_0_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
+        const TOKEN_1_STRING: &str = "USDC";
+        const ISSUER_1_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
+
+        struct MockedExtension;
+        impl ink_env::test::ChainExtension for MockedExtension {
+            /// The static function id of the chain extension.
+            fn func_id(&self) -> u32 {
+                1101
+            }
+
+            /// The chain extension is called with the given input.
+            ///
+            /// Returns an error code and may fill the `output` buffer with a
+            /// SCALE encoded result. The error code is taken from the
+            /// `ink_env::chain_extension::FromStatusCode` implementation for
+            /// `RandomReadErr`.
+            fn call(&mut self, _input: &[u8], output: &mut Vec<u8>) -> u32 {
+                let ret: [u8; 32] = [0; 32];
+                // let ret = 1;
+                scale::Encode::encode_to(&ret, output);
+                // println!("input: {:?}, output: {:?}", _input, output);
+                0 // 0 is error code
+            }
+        }
 
         /// The default constructor does its job.
         #[ink::test]
         fn new_works() {
             // Constructor works.
-            let initial_supply = 1_000;
-            let pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let contract_balance_0 = pair.reserve_0;
             let contract_balance_1 = pair.reserve_1;
             assert_eq!(contract_balance_0, contract_balance_1);
-            assert_eq!(initial_supply, contract_balance_0);
+        }
+
+        #[ink::test]
+        fn asset_1_works() {
+            // Constructor works.
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
+
+            assert_eq!(pair.asset_1(), "EUR");
+        }
+
+        #[ink::test]
+        fn issuer_1_works() {
+            // Constructor works.
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
+
+            assert_eq!(
+                pair.issuer_1(),
+                "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF"
+            );
+        }
+
+        #[ink::test]
+        fn balance_of_works() {
+            ink_env::test::register_chain_extension(MockedExtension);
+
+            let to = AccountId::from([0x01; 32]);
+            let pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
+            println!("balance of: balance: {}", pair.balance_of(to, TOKEN_0));
+            assert_eq!(pair.balance_of(to, TOKEN_0), 0);
         }
 
         #[ink::test]
         fn deposit_works_for_balanced_pair() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let deposit_amount = 100;
 
@@ -615,12 +901,19 @@ mod amm {
 
         #[ink::test]
         fn deposit_works_for_unbalanced_pair() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
-            pair.swap(TOKEN_0, 100, to).expect("Swap did not work");
+            pair.swap_asset_2_for_asset_1(100)
+                .expect("Swap did not work");
 
             let deposit_amount = 100;
             let user_balance_0_pre_deposit = pair.balance_of(to, TOKEN_0);
@@ -644,10 +937,16 @@ mod amm {
 
         #[ink::test]
         fn withdraw_without_lp_fails() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let result = pair.withdraw(1, to);
             assert_eq!(Err(Error::WithdrawWithoutSupply), result);
@@ -660,10 +959,16 @@ mod amm {
 
         #[ink::test]
         fn withdraw_works() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let deposit_amount = 5_000_00;
             let result = pair.deposit(deposit_amount, TOKEN_0, to);
@@ -705,10 +1010,16 @@ mod amm {
 
         #[ink::test]
         fn deposit_and_withdraw_work() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let deposit_amount = 5_000_00;
             // do initial deposit which initiates total_supply
@@ -742,10 +1053,16 @@ mod amm {
 
         #[ink::test]
         fn swap_works_with_small_amount() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
@@ -762,7 +1079,7 @@ mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(TOKEN_0, swap_amount, to);
+            let result = pair.swap_asset_2_for_asset_1(swap_amount);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
@@ -785,7 +1102,7 @@ mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(TOKEN_1, swap_amount, to);
+            let result = pair.swap_asset_1_for_asset_2(swap_amount);
             result.expect("Encountered error in swap");
 
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
@@ -806,10 +1123,16 @@ mod amm {
 
         #[ink::test]
         fn swap_works_with_large_amount() {
+            ink_env::test::register_chain_extension(MockedExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
-            let mut pair = Pair::new(TOKEN_0, initial_supply, TOKEN_1, initial_supply, LP_TOKEN);
+            let mut pair = Pair::new(
+                TOKEN_0_STRING.to_string(),
+                ISSUER_0_STRING.to_string(),
+                TOKEN_1_STRING.to_string(),
+                ISSUER_1_STRING.to_string(),
+            );
 
             let gained_lp = pair.deposit(5, TOKEN_0, to);
             let gained_lp = gained_lp.expect("Could not unwrap gained lp");
@@ -826,7 +1149,7 @@ mod amm {
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
 
-            let result = pair.swap(TOKEN_0, swap_amount, to);
+            let result = pair.swap_asset_2_for_asset_1(swap_amount);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
@@ -852,7 +1175,7 @@ mod amm {
                 "Balances pre swap: {}, {}",
                 user_balance_0_pre_swap, user_balance_1_pre_swap
             );
-            let result = pair.swap(TOKEN_1, swap_amount, to);
+            let result = pair.swap_asset_2_for_asset_1(swap_amount);
             result.expect("Encountered error in swap");
             let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
             let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);

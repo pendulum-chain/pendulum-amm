@@ -8,12 +8,12 @@ edition = "2018"
 overflow-checks = false
 
 [dependencies]
-ink_primitives = { version = "3.0.0-rc4", default-features = false }
-ink_metadata = { version = "3.0.0-rc4", default-features = false, features = ["derive"], optional = true }
-ink_env = { version = "3.0.0-rc4", default-features = false }
-ink_storage = { version = "3.0.0-rc4", default-features = false }
-ink_lang = { version = "3.0.0-rc4", default-features = false }
-ink_prelude = { version = "3.0.0-rc4", default-features = false }
+ink_primitives = { git = "https://github.com/paritytech/ink/", rev = "45ef413", default-features = false }
+ink_metadata = { git = "https://github.com/paritytech/ink/", rev = "45ef413", default-features = false, features = ["derive"], optional = true }
+ink_env = { git = "https://github.com/paritytech/ink/", rev = "45ef413", default-features = false }
+ink_storage = { git = "https://github.com/paritytech/ink/", rev = "45ef413", default-features = false }
+ink_lang = { git = "https://github.com/paritytech/ink/", rev = "45ef413", default-features = false }
+ink_prelude = { git = "https://github.com/paritytech/ink/", rev = "45ef413", default-features = false }
 
 scale = { package = "parity-scale-codec", version = "2.1", default-features = false, features = ["derive"] }
 scale-info = { version = "0.6", default-features = false, features = ["derive"], optional = true }
@@ -32,7 +32,6 @@ crate-type = [
 default = ["std"]
 std = [
     "ink_primitives/std",
-    "ink_metadata",
     "ink_metadata/std",
     "ink_env/std",
     "ink_storage/std",
