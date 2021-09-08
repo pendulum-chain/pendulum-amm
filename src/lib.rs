@@ -60,9 +60,6 @@ pub mod util {
     use crate::amm::Error;
     use crate::AssetCode;
 
-    #[cfg(not(feature = "ink-as-dependency"))]
-    use ink_prelude::vec::Vec;
-
     pub fn asset_from_string(str: ink_prelude::string::String) -> Result<AssetCode, Error> {
         let str: &[u8] = str.as_ref();
         if str.len() > 12 {
