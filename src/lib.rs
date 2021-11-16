@@ -325,7 +325,6 @@ pub mod amm {
     pub type Result<T> = core::result::Result<T, Error>;
 
     const MINIMUM_LIQUIDITY: u128 = 1;
-    const ACCURACY_MULTIPLIER: u128 = 1_000;
 
     /// Event emitted when a token transfer occurs.
     #[ink(event)]
@@ -541,11 +540,9 @@ pub mod amm {
                 let address_zero = AccountId::from([0x01; 32]);
                 self._mint(address_zero, MINIMUM_LIQUIDITY)?; // permanently lock first liquidity tokens
             } else {
-                // upscale liquidity with ACCURACY_MULTIPLIER to improve precision
-                // because usage of fractional numbers is not possible
                 liquidity = core::cmp::min(
-                    amount_0 * ACCURACY_MULTIPLIER * total_supply / reserve_0,
-                    amount_1 * ACCURACY_MULTIPLIER * total_supply / reserve_1,
+                    amount_0 * total_supply / reserve_0,
+                    amount_1 * total_supply / reserve_1,
                 );
             }
 
@@ -589,11 +586,8 @@ pub mod amm {
             let balance_0 = self.balance_of(contract, asset_0);
             let balance_1 = self.balance_of(contract, asset_1);
 
-            // rescale amounts with ACCURACY_MULTIPLIER to return proper amounts
-            let amount_0 = amount * balance_0
-                / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
-            let amount_1 = amount * balance_1
-                / (((total_supply - amount) + amount / ACCURACY_MULTIPLIER) * ACCURACY_MULTIPLIER);
+            let amount_0 = amount * balance_0 / ((total_supply - amount) + amount);
+            let amount_1 = amount * balance_1 / ((total_supply - amount) + amount);
 
             if !(amount_0 > 0 || amount_1 > 0) {
                 return Err(Error::InsufficientLiquidityBurned);
