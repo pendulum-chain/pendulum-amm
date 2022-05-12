@@ -266,21 +266,16 @@ pub mod key_encoding {
 #[ink::contract(env = crate::CustomEnvironment)]
 pub mod amm {
 
-    #[cfg(not(feature = "ink-as-dependency"))]
-    #[allow(unused_imports)]
-    use ink_prelude::string::String;
-
-    #[cfg(not(feature = "ink-as-dependency"))]
-    use ink_storage::collections::HashMap as StorageHashMap;
-
-    use num_integer::sqrt;
-
     use crate::key_encoding::{
         decode_stellar_key, encode_stellar_key, ED25519_PUBLIC_KEY_BYTE_LENGTH,
         ED25519_PUBLIC_KEY_VERSION_BYTE,
     };
     use crate::util::{asset_from_string, trim_zeros};
     use crate::Asset;
+    use ink_prelude::string::String;
+    use ink_storage::traits::SpreadAllocate;
+    use ink_storage::Mapping;
+    use num_integer::sqrt;
 
     /// The ERC-20 error types.
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -375,6 +370,7 @@ pub mod amm {
     }
 
     #[ink(storage)]
+    #[derive(SpreadAllocate)]
     pub struct Pair {
         reserve_0: Balance,
         reserve_1: Balance,
@@ -383,7 +379,7 @@ pub mod amm {
         asset_1: Asset,
         total_supply: Balance,
         /// Mapping from owner to number of owned token.
-        lp_balances: StorageHashMap<AccountId, Balance>,
+        lp_balances: Mapping<AccountId, Balance>,
     }
 
     impl Pair {
@@ -412,20 +408,22 @@ pub mod amm {
             )
             .expect("Could not decode issuer_1");
 
-            let instance = Self {
-                asset_0: (issuer_0, asset_code_0),
-                asset_1: (issuer_1, asset_code_1),
-                reserve_0: 0,
-                reserve_1: 0,
-                total_supply: 0,
-                lp_balances: Default::default(),
-            };
+            // This call is required in order to correctly initialize the
+            // `Mapping`s of our contract.
+            let instance = ink_lang::utils::initialize_contract(|contract: &mut Self| {
+                contract.asset_0 = (issuer_0, asset_code_0);
+                contract.asset_1 = (issuer_1, asset_code_1);
+                contract.reserve_0 = 0;
+                contract.reserve_1 = 0;
+                contract.total_supply = 0;
+            });
 
             Self::env().emit_event(Transfer {
                 from: None,
                 to: Some(caller),
                 value: 0,
             });
+
             instance
         }
 
@@ -440,7 +438,7 @@ pub mod amm {
         /// Returns `0` if the account is non-existent.
         #[ink(message)]
         pub fn lp_balance_of(&self, owner: AccountId) -> Balance {
-            *self.lp_balances.get(&owner).unwrap_or(&0)
+            self.lp_balances.get(&owner).unwrap_or(0)
         }
 
         #[ink(message)]
@@ -719,7 +717,7 @@ pub mod amm {
         fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
             self.total_supply += value;
             let balance = self.lp_balance_of(to);
-            self.lp_balances.insert(to, balance + value);
+            self.lp_balances.insert(to, &(balance + value));
             self.env().emit_event(Transfer {
                 from: None,
                 to: Some(to),
@@ -731,7 +729,7 @@ pub mod amm {
         fn _burn(&mut self, from: AccountId, value: Balance) -> Result<()> {
             self.total_supply -= value;
             let balance = self.lp_balance_of(from);
-            self.lp_balances.insert(from, balance - value);
+            self.lp_balances.insert(from, &(balance - value));
             self.env().emit_event(Transfer {
                 from: Some(from),
                 to: None,
