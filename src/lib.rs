@@ -747,7 +747,7 @@ pub mod amm {
         use super::*;
         use ink_env::debug_println;
         use ink_lang as ink;
-        use scale::Encode;
+        use scale::{Decode, Encode, Input};
 
         const TOKEN_0: Asset = ([0; 32], [0; 12]);
         const TOKEN_1: Asset = ([1; 32], [1; 12]);
@@ -756,6 +756,13 @@ pub mod amm {
         const ISSUER_0_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
         const TOKEN_1_STRING: &str = "USDC";
         const ISSUER_1_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
+
+        // TODO build hashmap for currency and
+        type Currency = [u8; 32];
+        type FetchBalanceInput = [u8; 32 + 32 + 12]; // 1-> owner:AccountId, 2-> asset_issuer: [u8;32], 3-> asset_code: [u8;12]
+        type TransferBalanceInput = [u8; 32 + 32 + 32 + 12 + 16]; // 1-> from: AccoundId, 2-> to: AccountId, 3-> asset_issuer: [u8;32], 4-> asset_code: [u8;12], 5-> balance: u128
+
+        static mut balances: Option<Mapping<(AccountId, Currency), Balance>> = None;
 
         struct MockedBalanceExtension;
         impl ink_env::test::ChainExtension for MockedBalanceExtension {
@@ -770,21 +777,32 @@ pub mod amm {
             /// SCALE encoded result. The error code is taken from the
             /// `ink_env::chain_extension::FromStatusCode` implementation for
             /// `RandomReadErr`.
-            fn call(&mut self, input: &[u8], output: &mut Vec<u8>) -> u32 {
-                // let mut account_array: [u8; 32] = Default::default();
-                // account_array.copy_from_slice(&input[0..32]);
-                // let account_id = AccountId::from(account_array);
+            fn call(&mut self, mut _input: &[u8], output: &mut Vec<u8>) -> u32 {
+                let input: FetchBalanceInput =
+                    <FetchBalanceInput as scale::Decode>::decode(&mut _input).unwrap();
 
-                // let mut issuer_array: [u8; 32] = Default::default();
-                // issuer_array.copy_from_slice(&input[32..64]);
+                let mut account_array: [u8; 32] = Default::default();
+                account_array.copy_from_slice(&input[0..32]);
+                let account_id = AccountId::from(account_array);
 
-                // let mut asset_code_array: [u8; 12] = Default::default();
+                let mut issuer_array: [u8; 32] = Default::default();
+                issuer_array.copy_from_slice(&input[32..64]);
 
-                let balance: Balance = 1000000;
+                let mut asset_code_array: [u8; 12] = Default::default();
+                asset_code_array.copy_from_slice(&input[96..108]);
 
-                let ret = balance.encode();
-                scale::Encode::encode_to(&ret, output);
-                // debug_println!("MockedBalanceExtension::call 1101");
+                unsafe {
+                    let balance = balances
+                        .as_mut()
+                        .unwrap()
+                        .get(&(account_id, issuer_array))
+                        .unwrap_or(0);
+                    // let balance: Balance = 1000000;
+                    // let ret = balance.encode();
+                    let ret = balance;
+                    scale::Encode::encode_to(&ret, output);
+                    // debug_println!("MockedBalanceExtension::call 1101");
+                }
 
                 0 // 0 is error code
             }
@@ -823,7 +841,8 @@ pub mod amm {
                 // let amount: u128 = u128::from_le_bytes(amount_array);
 
                 let dispatch_result: Result<()> = Ok(());
-                let ret = dispatch_result.encode();
+                // let ret = dispatch_result.encode();
+                let ret = dispatch_result;
                 scale::Encode::encode_to(&ret, output);
                 // debug_println!("MockedTransferExtension::call 1102");
 
@@ -834,6 +853,10 @@ pub mod amm {
         /// The default constructor does its job.
         #[ink::test]
         fn new_works() {
+            unsafe {
+                balances = Some(Mapping::default());
+                debug_println!("new_works, balances: {:?}", balances.as_mut().unwrap());
+            }
             // Constructor works.
             let pair = Pair::new(
                 TOKEN_0_STRING.to_string(),
