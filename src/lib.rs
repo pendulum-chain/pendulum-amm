@@ -27,6 +27,7 @@ pub trait BalanceExtension {
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub enum BalanceReadErr {
     FailGetBalance,
+    FailTransferBalance,
 }
 
 impl ink_env::chain_extension::FromStatusCode for BalanceReadErr {
@@ -34,6 +35,7 @@ impl ink_env::chain_extension::FromStatusCode for BalanceReadErr {
         match status_code {
             0 => Ok(()),
             1 => Err(Self::FailGetBalance),
+            1 => Err(Self::FailTransferBalance),
             _ => panic!("encountered unknown status code"),
         }
     }
@@ -739,14 +741,13 @@ pub mod amm {
         }
     }
 
-    /// Unit tests.
-    #[cfg(not(feature = "ink-experimental-engine"))]
     #[cfg(test)]
     mod tests {
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
-
+        use ink_env::debug_println;
         use ink_lang as ink;
+        use scale::Encode;
 
         const TOKEN_0: Asset = ([0; 32], [0; 12]);
         const TOKEN_1: Asset = ([1; 32], [1; 12]);
@@ -756,8 +757,8 @@ pub mod amm {
         const TOKEN_1_STRING: &str = "USDC";
         const ISSUER_1_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
 
-        struct MockedExtension;
-        impl ink_env::test::ChainExtension for MockedExtension {
+        struct MockedBalanceExtension;
+        impl ink_env::test::ChainExtension for MockedBalanceExtension {
             /// The static function id of the chain extension.
             fn func_id(&self) -> u32 {
                 1101
@@ -769,11 +770,63 @@ pub mod amm {
             /// SCALE encoded result. The error code is taken from the
             /// `ink_env::chain_extension::FromStatusCode` implementation for
             /// `RandomReadErr`.
-            fn call(&mut self, _input: &[u8], output: &mut Vec<u8>) -> u32 {
-                let ret: [u8; 32] = [0; 32];
-                // let ret = 1;
+            fn call(&mut self, input: &[u8], output: &mut Vec<u8>) -> u32 {
+                // let mut account_array: [u8; 32] = Default::default();
+                // account_array.copy_from_slice(&input[0..32]);
+                // let account_id = AccountId::from(account_array);
+
+                // let mut issuer_array: [u8; 32] = Default::default();
+                // issuer_array.copy_from_slice(&input[32..64]);
+
+                // let mut asset_code_array: [u8; 12] = Default::default();
+
+                let balance: Balance = 1000000;
+
+                let ret = balance.encode();
                 scale::Encode::encode_to(&ret, output);
-                // println!("input: {:?}, output: {:?}", _input, output);
+                // debug_println!("MockedBalanceExtension::call 1101");
+
+                0 // 0 is error code
+            }
+        }
+
+        struct MockedTransferExtension;
+        impl ink_env::test::ChainExtension for MockedTransferExtension {
+            /// The static function id of the chain extension.
+            fn func_id(&self) -> u32 {
+                1102
+            }
+
+            /// The chain extension is called with the given input.
+            ///
+            /// Returns an error code and may fill the `output` buffer with a
+            /// SCALE encoded result. The error code is taken from the
+            /// `ink_env::chain_extension::FromStatusCode` implementation for
+            /// `RandomReadErr`.
+            fn call(&mut self, input: &[u8], output: &mut Vec<u8>) -> u32 {
+                // let mut from_account_array: [u8; 32] = Default::default();
+                // from_account_array.copy_from_slice(&input[0..32]);
+                // let from_account_id = AccountId::from(from_account_array);
+
+                // let mut to_account_array: [u8; 32] = Default::default();
+                // to_account_array.copy_from_slice(&input[32..64]);
+                // let to_account_id = AccountId::from(to_account_array);
+
+                // let mut issuer_array: [u8; 32] = Default::default();
+                // issuer_array.copy_from_slice(&input[64..96]);
+
+                // let mut asset_code_array: [u8; 12] = Default::default();
+                // asset_code_array.copy_from_slice(&input[96..108]);
+
+                // let mut amount_array: [u8; 16] = Default::default();
+                // amount_array.copy_from_slice(&input[108..]);
+                // let amount: u128 = u128::from_le_bytes(amount_array);
+
+                let dispatch_result: Result<()> = Ok(());
+                let ret = dispatch_result.encode();
+                scale::Encode::encode_to(&ret, output);
+                // debug_println!("MockedTransferExtension::call 1102");
+
                 0 // 0 is error code
             }
         }
@@ -825,7 +878,8 @@ pub mod amm {
 
         #[ink::test]
         fn balance_of_works() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
 
             let to = AccountId::from([0x01; 32]);
             let pair = Pair::new(
@@ -840,7 +894,8 @@ pub mod amm {
 
         #[ink::test]
         fn deposit_works_for_balanced_pair() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
@@ -892,7 +947,8 @@ pub mod amm {
 
         #[ink::test]
         fn deposit_works_for_unbalanced_pair() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000;
@@ -928,7 +984,8 @@ pub mod amm {
 
         #[ink::test]
         fn withdraw_without_lp_fails() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -950,7 +1007,8 @@ pub mod amm {
 
         #[ink::test]
         fn withdraw_works() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -1001,7 +1059,8 @@ pub mod amm {
 
         #[ink::test]
         fn deposit_and_withdraw_work() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -1044,7 +1103,8 @@ pub mod amm {
 
         #[ink::test]
         fn swap_works_with_small_amount() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
@@ -1114,7 +1174,8 @@ pub mod amm {
 
         #[ink::test]
         fn swap_works_with_large_amount() {
-            ink_env::test::register_chain_extension(MockedExtension);
+            ink_env::test::register_chain_extension(MockedBalanceExtension);
+            ink_env::test::register_chain_extension(MockedTransferExtension);
             let to = AccountId::from([0x01; 32]);
 
             let initial_supply = 1_000_000;
