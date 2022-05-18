@@ -21,6 +21,10 @@ scale-info = {version = "2", default-features = false, features = ["derive"], op
 
 num-integer = {version = "0.1.44", default-features = false}
 
+[dev-dependencies]
+lazy_static = "1.4.0"
+# thiserror = "1.0.31"
+
 [lib]
 crate-type = [
   # Used for normal contract Wasm blobs.
