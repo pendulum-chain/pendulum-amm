@@ -1,8 +1,7 @@
 [package]
-authors = ["[your_name] <[your_email]>"]
-edition = "2018"
+authors = ["SatoshiPay"]
+edition = "2021"
 name = "pendulum_amm"
-resolver = "2"
 version = "0.1.0"
 
 # Needed until https://github.com/paritytech/ink/issues/364 is resolved.
@@ -10,23 +9,17 @@ version = "0.1.0"
 overflow-checks = false
 
 [dependencies]
-ink_env = {version = "=3.0.0-rc7", default-features = false}
-ink_lang = {version = "=3.0.0-rc7", default-features = false}
-ink_metadata = {version = "=3.0.0-rc7", default-features = false, features = ["derive"], optional = true}
-ink_prelude = {version = "=3.0.0-rc7", default-features = false}
-ink_primitives = {version = "=3.0.0-rc7", default-features = false}
-ink_storage = {version = "=3.0.0-rc7", default-features = false}
+ink_env = {version = "^3.0.1", default-features = false}
+ink_lang = {version = "^3.0.1", default-features = false}
+ink_metadata = {version = "^3.0.1", default-features = false, features = ["derive"], optional = true}
+ink_prelude = {version = "^3.0.1", default-features = false}
+ink_primitives = {version = "^3.0.1", default-features = false}
+ink_storage = {version = "^3.0.1", default-features = false}
 
-scale = {package = "parity-scale-codec", version = "2.1", default-features = false, features = ["derive"]}
-scale-info = {version = "1.0.0", default-features = false, features = ["derive"], optional = true}
+scale = {package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"]}
+scale-info = {version = "2", default-features = false, features = ["derive"], optional = true}
 
 num-integer = {version = "0.1.44", default-features = false}
-
-[patch."https://github.com/paritytech/ink/"]
-ink_allocator = {version = "=3.0.0-rc7"}
-ink_lang_codegen = {version = "=3.0.0-rc7"}
-ink_lang_ir = {version = "=3.0.0-rc7"}
-ink_storage_derive = {version = "=3.0.0-rc7"}
 
 [lib]
 crate-type = [
