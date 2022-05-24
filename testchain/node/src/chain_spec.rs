@@ -1,4 +1,7 @@
-use contracts_node_runtime::{AccountId, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig, TokensConfig, WASM_BINARY};
+use contracts_node_runtime::{
+    AccountId, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig,
+    TokensConfig, WASM_BINARY,
+};
 use sc_service::ChainType;
 use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
@@ -11,152 +14,169 @@ pub type ChainSpec = sc_service::GenericChainSpec<GenesisConfig>;
 
 /// Generate a crypto pair from seed.
 pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
-	TPublic::Pair::from_string(&format!("//{}", seed), None)
-		.expect("static values are valid; qed")
-		.public()
+    TPublic::Pair::from_string(&format!("//{}", seed), None)
+        .expect("static values are valid; qed")
+        .public()
 }
 
 type AccountPublic = <Signature as Verify>::Signer;
 
 /// Generate an account ID from seed.
 pub fn get_account_id_from_seed<TPublic: Public>(seed: &str) -> AccountId
-	where
-		AccountPublic: From<<TPublic::Pair as Pair>::Public>,
+where
+    AccountPublic: From<<TPublic::Pair as Pair>::Public>,
 {
-	AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
+    AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
 }
 
 pub fn development_config() -> Result<ChainSpec, String> {
-	let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
+    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
 
-	Ok(ChainSpec::from_genesis(
-		// Name
-		"Development",
-		// ID
-		"dev",
-		ChainType::Development,
-		move || {
-			testnet_genesis(
-				wasm_binary,
-				// Sudo account
-				get_account_id_from_seed::<sr25519::Public>("Alice"),
-				// Pre-funded accounts
-				vec![
-					get_account_id_from_seed::<sr25519::Public>("Alice"),
-					get_account_id_from_seed::<sr25519::Public>("Bob"),
-					get_account_id_from_seed::<sr25519::Public>("Charlie"),
-					get_account_id_from_seed::<sr25519::Public>("Dave"),
-					get_account_id_from_seed::<sr25519::Public>("Eve"),
-					get_account_id_from_seed::<sr25519::Public>("Ferdie"),
-					get_account_id_from_seed::<sr25519::Public>("Alice//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Bob//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Charlie//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Dave//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Eve//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Ferdie//stash"),
-				],
-				true,
-			)
-		},
-		// Bootnodes
-		vec![],
-		// Telemetry
-		None,
-		// Protocol ID
-		Some("rpc"),
-		// Fork ID
-		None,
-		// Properties
-		None,
-		// Extensions
-		None,
-	))
+    Ok(ChainSpec::from_genesis(
+        // Name
+        "Development",
+        // ID
+        "dev",
+        ChainType::Development,
+        move || {
+            testnet_genesis(
+                wasm_binary,
+                // Sudo account
+                get_account_id_from_seed::<sr25519::Public>("Alice"),
+                // Pre-funded accounts
+                vec![
+                    get_account_id_from_seed::<sr25519::Public>("Alice"),
+                    get_account_id_from_seed::<sr25519::Public>("Bob"),
+                    get_account_id_from_seed::<sr25519::Public>("Charlie"),
+                    get_account_id_from_seed::<sr25519::Public>("Dave"),
+                    get_account_id_from_seed::<sr25519::Public>("Eve"),
+                    get_account_id_from_seed::<sr25519::Public>("Ferdie"),
+                    get_account_id_from_seed::<sr25519::Public>("Alice//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Bob//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Charlie//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Dave//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Eve//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Ferdie//stash"),
+                ],
+                true,
+            )
+        },
+        // Bootnodes
+        vec![],
+        // Telemetry
+        None,
+        // Protocol ID
+        Some("rpc"),
+        // Fork ID
+        None,
+        // Properties
+        None,
+        // Extensions
+        None,
+    ))
 }
 
 pub fn local_testnet_config() -> Result<ChainSpec, String> {
-	let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
+    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
 
-	Ok(ChainSpec::from_genesis(
-		// Name
-		"Local Testnet",
-		// ID
-		"local_testnet",
-		ChainType::Local,
-		move || {
-			testnet_genesis(
-				wasm_binary,
-				// Sudo account
-				get_account_id_from_seed::<sr25519::Public>("Alice"),
-				// Pre-funded accounts
-				vec![
-					get_account_id_from_seed::<sr25519::Public>("Alice"),
-					get_account_id_from_seed::<sr25519::Public>("Bob"),
-					get_account_id_from_seed::<sr25519::Public>("Charlie"),
-					get_account_id_from_seed::<sr25519::Public>("Dave"),
-					get_account_id_from_seed::<sr25519::Public>("Eve"),
-					get_account_id_from_seed::<sr25519::Public>("Ferdie"),
-					get_account_id_from_seed::<sr25519::Public>("Alice//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Bob//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Charlie//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Dave//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Eve//stash"),
-					get_account_id_from_seed::<sr25519::Public>("Ferdie//stash"),
-				],
-				true,
-			)
-		},
-		// Bootnodes
-		vec![],
-		// Telemetry
-		None,
-		// Protocol ID
-		Some("rpc"),
-		// Fork ID
-		None,
-		// Properties
-		None,
-		// Extensions
-		None,
-	))
+    Ok(ChainSpec::from_genesis(
+        // Name
+        "Local Testnet",
+        // ID
+        "local_testnet",
+        ChainType::Local,
+        move || {
+            testnet_genesis(
+                wasm_binary,
+                // Sudo account
+                get_account_id_from_seed::<sr25519::Public>("Alice"),
+                // Pre-funded accounts
+                vec![
+                    get_account_id_from_seed::<sr25519::Public>("Alice"),
+                    get_account_id_from_seed::<sr25519::Public>("Bob"),
+                    get_account_id_from_seed::<sr25519::Public>("Charlie"),
+                    get_account_id_from_seed::<sr25519::Public>("Dave"),
+                    get_account_id_from_seed::<sr25519::Public>("Eve"),
+                    get_account_id_from_seed::<sr25519::Public>("Ferdie"),
+                    get_account_id_from_seed::<sr25519::Public>("Alice//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Bob//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Charlie//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Dave//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Eve//stash"),
+                    get_account_id_from_seed::<sr25519::Public>("Ferdie//stash"),
+                ],
+                true,
+            )
+        },
+        // Bootnodes
+        vec![],
+        // Telemetry
+        None,
+        // Protocol ID
+        Some("rpc"),
+        // Fork ID
+        None,
+        // Properties
+        None,
+        // Extensions
+        None,
+    ))
 }
 
 /// Configure initial storage state for FRAME modules.
 fn testnet_genesis(
-	wasm_binary: &[u8],
-	root_key: AccountId,
-	endowed_accounts: Vec<AccountId>,
-	_enable_println: bool,
+    wasm_binary: &[u8],
+    root_key: AccountId,
+    endowed_accounts: Vec<AccountId>,
+    _enable_println: bool,
 ) -> GenesisConfig {
-	let stellar_usdc_asset: CurrencyId = CurrencyId::try_from((
-		"USDC",
-		[
-			20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16,
-			50, 30, 226, 102, 231, 46, 199, 108, 171, 97, 144, 240,
-			161, 51, 109, 72, 34, 159, 139
-		],
-	))
-		.unwrap();
+    let stellar_usdc_asset: CurrencyId = CurrencyId::try_from((
+        "USDC",
+        [
+            20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16, 50, 30, 226, 102, 231, 46,
+            199, 108, 171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
+        ],
+    ))
+    .unwrap();
 
-	GenesisConfig {
-		system: SystemConfig {
-			// Add Wasm runtime to storage.
-			code: wasm_binary.to_vec(),
-		},
-		balances: BalancesConfig {
-			// Configure endowed accounts with initial balance of 1 << 60.
-			balances: endowed_accounts.iter().cloned().map(|k| (k, 1 << 60)).collect(),
-		},
-		sudo: SudoConfig {
-			// Assign network admin rights.
-			key: Some(root_key),
-		},
-		transaction_payment: Default::default(),
+    let stellar_eur_asset: CurrencyId = CurrencyId::try_from((
+        "EUR",
+        [
+            20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16, 50, 30, 226, 102, 231, 46,
+            199, 108, 171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
+        ],
+    ))
+    .unwrap();
 
-		tokens: TokensConfig {
-			balances: endowed_accounts
-				.iter()
-				.flat_map(|x| vec![(x.clone(), stellar_usdc_asset, 10u128.pow(12))])
-				.collect(),
-		}
-	}
+    GenesisConfig {
+        system: SystemConfig {
+            // Add Wasm runtime to storage.
+            code: wasm_binary.to_vec(),
+        },
+        balances: BalancesConfig {
+            // Configure endowed accounts with initial balance of 1 << 60.
+            balances: endowed_accounts
+                .iter()
+                .cloned()
+                .map(|k| (k, 1 << 60))
+                .collect(),
+        },
+        sudo: SudoConfig {
+            // Assign network admin rights.
+            key: Some(root_key),
+        },
+        transaction_payment: Default::default(),
+
+        tokens: TokensConfig {
+            balances: endowed_accounts
+                .iter()
+                .flat_map(|x| {
+                    vec![
+                        (x.clone(), stellar_usdc_asset, 10u128.pow(12)),
+                        (x.clone(), stellar_eur_asset, 10u128.pow(12)),
+                    ]
+                })
+                .collect(),
+        },
+    }
 }
