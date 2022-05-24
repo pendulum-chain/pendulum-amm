@@ -6,20 +6,21 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use codec::{Encode,Decode};
+use codec::{Encode,Decode, MaxEncodedLen};
 use frame_support::{traits::OnRuntimeUpgrade, weights::DispatchClass};
 use frame_system::limits::{BlockLength, BlockWeights};
 use pallet_contracts::{migration, weights::WeightInfo, /* DefaultContractAccessWeight, */
 chain_extension::{ ChainExtension, Environment, Ext, InitState, RetVal, SysConfig, UncheckedFrom}};
+
 use sp_api::impl_runtime_apis;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
-	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, Verify},
+	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, Verify, Zero},
 	transaction_validity::{TransactionSource, TransactionValidity},
-	ApplyExtrinsicResult, MultiSignature,
+	ApplyExtrinsicResult, MultiSignature, scale_info::TypeInfo
 };
-use sp_std::prelude::*;
+use sp_std::{prelude::*, fmt};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -56,11 +57,16 @@ pub type AccountId = <<Signature as Verify>::Signer as IdentifyAccount>::Account
 /// Balance of an account.
 pub type Balance = u128;
 
+pub type Amount = i128;
+
 /// Index of a transaction in the chain.
 pub type Index = u32;
 
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
+
+pub type Bytes12 = [u8; 12];
+pub type AssetIssuer = [u8; 32];
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -282,40 +288,88 @@ impl Contains<AccountId> for DustRemovalWhitelist {
 	}
 }
 
-// impl orml_tokens::Config for Runtime {
-// 	type Event = Event;
-// 	type Balance = Balance;
-// 	type Amount = Amount;
-// 	type CurrencyId = CurrencyId;
-// 	type WeightInfo = ();
-// 	type ExistentialDeposits = ExistentialDeposits;
-// 	type OnDust = ();
-// 	type MaxLocks = MaxLocks;
-// 	type MaxReserves = MaxReserves;
-// 	type ReserveIdentifier = ();
-// 	type DustRemovalWhitelist = DustRemovalWhitelist;
-// }
-//
-// parameter_type_with_key! {
-// 	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
-// 		Zero::zero()
-// 	};
-//
-// 	pub const MaxReserves: u32 = 50;
-// 	pub const MaxLocks: u32 = 50;
-// }
-//
-// parameter_types! {
-// 	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
-// }
-//
-// impl orml_currencies::Config for Runtime {
-// 	type Event = Event;
-// 	type MultiCurrency = Tokens;
-// 	type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances, Amount, BlockNumber>;
-// 	type GetNativeCurrencyId = GetNativeCurrencyId;
-// 	type WeightInfo = ();
-// }
+#[derive(Encode, Decode, Eq, PartialEq, Copy, Clone, PartialOrd, Ord, TypeInfo, MaxEncodedLen)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub enum CurrencyId {
+	Native,
+	StellarNative,
+	AlphaNum12 { code: Bytes12, issuer: AssetIssuer },
+}
+
+impl Default for CurrencyId {
+	fn default() -> Self {
+		CurrencyId::Native
+	}
+}
+
+impl TryFrom<(&str, AssetIssuer)> for CurrencyId {
+	type Error = &'static str;
+
+	fn try_from(value: (&str, AssetIssuer)) -> Result<Self, Self::Error> {
+		let slice = value.0;
+		let issuer = value.1;
+		if slice.len() > 0 && slice.len() <= 12 {
+			let mut code: Bytes12 = [0; 12];
+			code[..slice.len()].copy_from_slice(slice.as_bytes());
+			Ok(CurrencyId::AlphaNum12 { code, issuer })
+		} else {
+			Err("More than 12 bytes not supported")
+		}
+	}
+}
+
+impl fmt::Debug for CurrencyId {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Native => write!(f, "PEN"),
+			Self::StellarNative => write!(f, "XLM"),
+			Self::AlphaNum12 { code, issuer } => {
+				write!(
+					f,
+					"{{ code: {}, issuer: {} }}",
+					str::from_utf8(code).unwrap(),
+					str::from_utf8(issuer).unwrap()
+				)
+			},
+		}
+	}
+}
+
+parameter_type_with_key! {
+	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
+		Zero::zero()
+	};
+}
+
+
+
+impl orml_tokens::Config for Runtime {
+	type Event = Event;
+	type Balance = Balance;
+	type Amount = Amount;
+	type CurrencyId = CurrencyId;
+	type WeightInfo = ();
+	type ExistentialDeposits = ExistentialDeposits;
+	type OnDust = ();
+	type MaxLocks = MaxLocks;
+	// type MaxReserves = MaxReserves;
+	// type ReserveIdentifier = ();
+	type DustRemovalWhitelist = DustRemovalWhitelist;
+}
+
+
+
+parameter_types! {
+	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
+}
+
+impl orml_currencies::Config for Runtime {
+	type Event = Event;
+	type MultiCurrency = Tokens;
+	type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances, Amount, BlockNumber>;
+	type GetNativeCurrencyId = GetNativeCurrencyId;
+	type WeightInfo = ();
+}
 
 impl pallet_sudo::Config for Runtime {
 	type Event = Event;
@@ -357,8 +411,8 @@ use sp_runtime::DispatchError;
 
 use core::convert::TryFrom;
 use frame_support::traits::Contains;
-// use orml_currencies::BasicCurrencyAdapter;
-// use orml_traits::{MultiCurrency, parameter_type_with_key};
+use orml_currencies::BasicCurrencyAdapter;
+use orml_traits::{MultiCurrency, parameter_type_with_key};
 use sp_std::str;
 
 type FetchBalanceInput = [u8; 32 + 32 + 12]; // 1-> owner:AccountId, 2-> asset_issuer: [u8;32], 3-> asset_code: [u8;12]
@@ -387,18 +441,28 @@ impl ChainExtension<Runtime> for BalanceChainExtension {
 
 						let mut asset_code_array: [u8; 12] = Default::default();
 						asset_code_array.copy_from_slice(&input[64..]);
-
 						let asset_str: &str = str::from_utf8(&asset_code_array).map_err(|_| {
 							DispatchError::Other("ChainExtension failed to decode asset")
 						})?;
+						let asset_str = asset_str.trim_matches(char::from(0));
+						let currency_id: CurrencyId =
+							CurrencyId::try_from((asset_str, issuer_array))?;
 
-						return Ok(RetVal::Converging(0));
+						let balance = <Tokens as MultiCurrency<AccountId>>::total_balance(
+							currency_id,
+							&account_id,
+						);
+
+						let ret_val = balance.encode();
+						env.write(&ret_val, false, None).map_err(|_| {
+							DispatchError::Other("ChainExtension failed to fetch balance")
+						})?;
 					}
 					Err(err) => {
-						info!("CHAINEXTENSION ERROR: {:?}", err);
+						info!("CHAINEXTENSION ERROR for fetch balance: {:?}", err);
 					}
 				}
-			}
+			},
 
 			// transfer balance
 			1102 => {
@@ -423,21 +487,38 @@ impl ChainExtension<Runtime> for BalanceChainExtension {
 							DispatchError::Other("ChainExtension failed to decode asset")
 						})?;
 						let asset_str = asset_str.trim_matches(char::from(0));
+						let currency_id: CurrencyId =
+							CurrencyId::try_from((asset_str, issuer_array))?;
 
-						return Ok(RetVal::Converging(1));
+						let mut amount_array: [u8; 16] = Default::default();
+						amount_array.copy_from_slice(&input[108..]);
+						let amount: u128 = u128::from_le_bytes(amount_array);
+
+						let dispatch_result = <Currencies as MultiCurrency<AccountId>>::transfer(
+							currency_id,
+							&from_account_id,
+							&to_account_id,
+							amount,
+						);
+
+						let ret_val = dispatch_result.encode();
+						env.write(&ret_val, false, None).map_err(|_| {
+							DispatchError::Other("ChainExtension failed to fetch balance")
+						})?;
 					},
 					Err(err) => {
-						info!("CHAINEXTENSION ERROR: {:?}", err);
-						info!("Called an unregistered `func_id`: {:}", func_id);
+						info!("CHAINEXTENSION ERROR for transfer balance: {:?}", err);
 					},
 				}
 			},
+
 			other => {
 				info!("unregistered func_id: {:?}", other);
+				return Err(DispatchError::Other("Unimplemented func_id"))
 			}
 		}
 
-		Err(DispatchError::Other("EVERYTHING FAILED IN CHAINEXTENSION"))
+		Ok(RetVal::Converging(0))
 
 	}
 
@@ -497,8 +578,8 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
 		Contracts: pallet_contracts,
-		// Currencies: orml_currencies,
-		// Tokens: orml_tokens exclude_parts { Call }
+		Currencies: orml_currencies,
+		Tokens: orml_tokens exclude_parts { Call }
 	}
 );
 

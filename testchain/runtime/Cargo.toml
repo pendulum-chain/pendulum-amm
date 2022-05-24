@@ -13,6 +13,7 @@ publish = false
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
+serde = {version = '1.0.100', default-features = false, features = ['derive']}
 codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "max-encoded-len"] }
 scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
 
@@ -52,11 +53,10 @@ pallet-contracts-primitives = {  git = "https://github.com/paritytech/substrate"
 pallet-contracts-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-contracts-rpc-runtime-api", default-features = false }
 
 # Orml dependencies
-#orml-currencies = {git = "https://github.com/open-web3-stack/open-runtime-module-library", branch = "polkadot-v0.9.22", default-features = false}
-#orml-tokens = {git = "https://github.com/open-web3-stack/open-runtime-module-library",  branch = "polkadot-v0.9.22",  default-features = false}
-#orml-traits = {git = "https://github.com/open-web3-stack/open-runtime-module-library", branch = "polkadot-v0.9.22", default-features = false}
+orml-currencies = {git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false}
+orml-tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false }
+orml-traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false }
 
-pendulum-amm = {path = "../../smart_contract", default-features = false }
 
 [build-dependencies]
 substrate-wasm-builder =  {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "substrate-wasm-builder" }
@@ -95,11 +95,9 @@ std = [
 	"pallet-contracts-primitives/std",
 	"pallet-contracts-rpc-runtime-api/std",
 
-#	"orml-tokens/std",
-#	"orml-currencies/std",
-#	"orml-traits/std",
-
-	"pendulum-amm/std"
+	"orml-tokens/std",
+	"orml-currencies/std",
+	"orml-traits/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
@@ -121,8 +119,8 @@ try-runtime = [
 	"pallet-timestamp/try-runtime",
 	"pallet-transaction-payment/try-runtime",
 
-#	"orml-tokens/try-runtime",
-#	"orml-currencies/try-runtime",
+	"orml-tokens/try-runtime",
+	"orml-currencies/try-runtime",
 
 ]
 

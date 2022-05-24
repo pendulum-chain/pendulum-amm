@@ -1,6 +1,4 @@
-use contracts_node_runtime::{
-	AccountId, BalancesConfig, GenesisConfig, Signature, SudoConfig, SystemConfig, WASM_BINARY,
-};
+use contracts_node_runtime::{AccountId, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig, TokensConfig, WASM_BINARY};
 use sc_service::ChainType;
 use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
@@ -129,6 +127,16 @@ fn testnet_genesis(
 	endowed_accounts: Vec<AccountId>,
 	_enable_println: bool,
 ) -> GenesisConfig {
+	let stellar_usdc_asset: CurrencyId = CurrencyId::try_from((
+		"USDC",
+		[
+			20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16,
+			50, 30, 226, 102, 231, 46, 199, 108, 171, 97, 144, 240,
+			161, 51, 109, 72, 34, 159, 139
+		],
+	))
+		.unwrap();
+
 	GenesisConfig {
 		system: SystemConfig {
 			// Add Wasm runtime to storage.
@@ -143,5 +151,12 @@ fn testnet_genesis(
 			key: Some(root_key),
 		},
 		transaction_payment: Default::default(),
+
+		tokens: TokensConfig {
+			balances: endowed_accounts
+				.iter()
+				.flat_map(|x| vec![(x.clone(), stellar_usdc_asset, 10u128.pow(12))])
+				.collect(),
+		}
 	}
 }
