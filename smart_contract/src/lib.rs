@@ -401,12 +401,12 @@ pub mod amm {
                 issuer_0,
                 ED25519_PUBLIC_KEY_VERSION_BYTE,
             )
-                .expect("Could not decode issuer_0");
+            .expect("Could not decode issuer_0");
             let issuer_1 = decode_stellar_key::<String, ED25519_PUBLIC_KEY_BYTE_LENGTH>(
                 issuer_1,
                 ED25519_PUBLIC_KEY_VERSION_BYTE,
             )
-                .expect("Could not decode issuer_1");
+            .expect("Could not decode issuer_1");
 
             // This call is required in order to correctly initialize the
             // `Mapping`s of our contract.
