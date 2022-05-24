@@ -27,15 +27,15 @@ pub struct FullDeps<C, P> {
 
 /// Instantiate all full RPC extensions.
 pub fn create_full<C, P>(deps: FullDeps<C, P>) -> jsonrpc_core::IoHandler<sc_rpc::Metadata>
-	where
-		C: ProvideRuntimeApi<Block>,
-		C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static,
-		C: Send + Sync + 'static,
-		C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Index>,
-		C::Api: pallet_contracts_rpc::ContractsRuntimeApi<Block, AccountId, Balance, BlockNumber, Hash>,
-		C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
-		C::Api: BlockBuilder<Block>,
-		P: TransactionPool + 'static,
+where
+	C: ProvideRuntimeApi<Block>,
+	C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static,
+	C: Send + Sync + 'static,
+	C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Index>,
+	C::Api: pallet_contracts_rpc::ContractsRuntimeApi<Block, AccountId, Balance, BlockNumber, Hash>,
+	C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
+	C::Api: BlockBuilder<Block>,
+	P: TransactionPool + 'static,
 {
 	use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApi};
 	use substrate_frame_rpc_system::{FullSystem, SystemApi};

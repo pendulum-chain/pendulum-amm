@@ -6,29 +6,36 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use codec::{Encode,Decode, MaxEncodedLen};
+use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{traits::OnRuntimeUpgrade, weights::DispatchClass};
 use frame_system::limits::{BlockLength, BlockWeights};
-use pallet_contracts::{migration, weights::WeightInfo, /* DefaultContractAccessWeight, */
-chain_extension::{ ChainExtension, Environment, Ext, InitState, RetVal, SysConfig, UncheckedFrom}};
+use pallet_contracts::{
+	chain_extension::{
+		ChainExtension, Environment, Ext, InitState, RetVal, SysConfig, UncheckedFrom,
+	},
+	migration,
+	weights::WeightInfo,
+};
 
 use sp_api::impl_runtime_apis;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
+	scale_info::TypeInfo,
 	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, Verify, Zero},
 	transaction_validity::{TransactionSource, TransactionValidity},
-	ApplyExtrinsicResult, MultiSignature, scale_info::TypeInfo
+	ApplyExtrinsicResult, MultiSignature,
 };
-use sp_std::{prelude::*, fmt};
+use sp_std::{fmt, prelude::*};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
-	log::{trace, info},
-	construct_runtime, parameter_types,
+	construct_runtime,
+	log::{info, trace},
+	parameter_types,
 	traits::{ConstU32, KeyOwnerProofSystem, Randomness, StorageInfo},
 	weights::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
@@ -341,8 +348,6 @@ parameter_type_with_key! {
 	};
 }
 
-
-
 impl orml_tokens::Config for Runtime {
 	type Event = Event;
 	type Balance = Balance;
@@ -356,8 +361,6 @@ impl orml_tokens::Config for Runtime {
 	// type ReserveIdentifier = ();
 	type DustRemovalWhitelist = DustRemovalWhitelist;
 }
-
-
 
 parameter_types! {
 	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
@@ -404,7 +407,6 @@ parameter_types! {
 	};
 }
 
-
 //--------------------- Chain Extension --------------------------
 pub struct BalanceChainExtension;
 use sp_runtime::DispatchError;
@@ -412,7 +414,7 @@ use sp_runtime::DispatchError;
 use core::convert::TryFrom;
 use frame_support::traits::Contains;
 use orml_currencies::BasicCurrencyAdapter;
-use orml_traits::{MultiCurrency, parameter_type_with_key};
+use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_std::str;
 
 type FetchBalanceInput = [u8; 32 + 32 + 12]; // 1-> owner:AccountId, 2-> asset_issuer: [u8;32], 3-> asset_code: [u8;12]
@@ -420,8 +422,8 @@ type TransferBalanceInput = [u8; 32 + 32 + 32 + 12 + 16]; // 1-> from: AccoundId
 
 impl ChainExtension<Runtime> for BalanceChainExtension {
 	fn call<E: Ext>(func_id: u32, env: Environment<E, InitState>) -> Result<RetVal, DispatchError>
-		where
-			<E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
+	where
+		<E::T as SysConfig>::AccountId: UncheckedFrom<<E::T as SysConfig>::Hash> + AsRef<[u8]>,
 	{
 		info!("Call chain extension: {:?}", func_id);
 
@@ -457,10 +459,10 @@ impl ChainExtension<Runtime> for BalanceChainExtension {
 						env.write(&ret_val, false, None).map_err(|_| {
 							DispatchError::Other("ChainExtension failed to fetch balance")
 						})?;
-					}
+					},
 					Err(err) => {
 						info!("CHAINEXTENSION ERROR for fetch balance: {:?}", err);
-					}
+					},
 				}
 			},
 
@@ -515,11 +517,10 @@ impl ChainExtension<Runtime> for BalanceChainExtension {
 			other => {
 				info!("unregistered func_id: {:?}", other);
 				return Err(DispatchError::Other("Unimplemented func_id"))
-			}
+			},
 		}
 
 		Ok(RetVal::Converging(0))
-
 	}
 
 	fn enabled() -> bool {
