@@ -855,6 +855,41 @@ pub mod amm {
             });
             Ok(())
         }
+
+        fn _get_amount_out(
+            amount_in: Balance,
+            reserve_in: Balance,
+            reserve_out: Balance,
+        ) -> Result<Balance> {
+            if amount_in <= 0 {
+                return Err(Error::InsufficientInputAmount);
+            }
+            if reserve_in <= 0 || reserve_out <= 0 {
+                return Err(Error::InsufficientLiquidity);
+            }
+            let amount_in_with_fee = amount_in.saturating_mul(997);
+            let numerator = amount_in_with_fee.saturating_mul(reserve_out);
+            let denominator = reserve_in
+                .saturating_mul(1000)
+                .saturating_add(amount_in_with_fee);
+            Ok(numerator.saturating_div(denominator))
+        }
+
+        fn _get_amount_in(
+            amount_out: Balance,
+            reserve_in: Balance,
+            reserve_out: Balance,
+        ) -> Result<Balance> {
+            if amount_out <= 0 {
+                return Err(Error::InsufficientOutputAmount);
+            }
+            if reserve_in <= 0 || reserve_out <= 0 {
+                return Err(Error::InsufficientLiquidity);
+            }
+            let numerator = reserve_in.saturating_mul(reserve_out).saturating_mul(1000);
+            let denominator = reserve_out.saturating_sub(amount_out).mul(997);
+            Ok(numerator.saturating_div(denominator).saturating_add(1))
+        }
     }
 
     /// Unit tests.
