@@ -357,8 +357,10 @@ pub mod amm {
         sender: AccountId,
         #[ink(topic)]
         to: AccountId,
-        amount_to_send: Balance,
-        amount_to_receive: Balance,
+        amount_0_in: Balance,
+        amount_1_in: Balance,
+        amount_0_out: Balance,
+        amount_1_out: Balance,
     }
 
     #[ink(event)]
@@ -372,11 +374,20 @@ pub mod amm {
     #[ink(storage)]
     #[derive(SpreadAllocate)]
     pub struct Pair {
-        reserve_0: Balance,
-        reserve_1: Balance,
-
         asset_0: Asset,
         asset_1: Asset,
+
+        reserve_0: Balance,
+        reserve_1: Balance,
+        block_timestamp_last: u64,
+
+        price_0_cumulative_last: Balance,
+        price_1_cumulative_last: Balance,
+        k_last: Balance,
+
+        fee_to: Option<AccountId>,
+        fee_to_setter: AccountId,
+
         total_supply: Balance,
         /// Mapping from owner to number of owned token.
         lp_balances: Mapping<AccountId, Balance>,
@@ -391,6 +402,8 @@ pub mod amm {
             issuer_1: String,
         ) -> Self {
             let caller = Self::env().caller();
+            // TODO maybe change fee_to_setter to other address
+            let fee_to_setter = caller;
 
             let asset_code_0 =
                 asset_from_string(asset_code_0).expect("Could not decode asset_code_0");
@@ -415,6 +428,12 @@ pub mod amm {
                 contract.asset_1 = (issuer_1, asset_code_1);
                 contract.reserve_0 = 0;
                 contract.reserve_1 = 0;
+                contract.block_timestamp_last = 0;
+                contract.price_0_cumulative_last = 0;
+                contract.price_1_cumulative_last = 0;
+                contract.k_last = 0;
+                contract.fee_to = None;
+                contract.fee_to_setter = fee_to_setter;
                 contract.total_supply = 0;
             });
 
@@ -473,8 +492,52 @@ pub mod amm {
         }
 
         #[ink(message)]
-        pub fn get_reserves(&self) -> (Balance, Balance) {
-            return (self.reserve_0, self.reserve_1);
+        pub fn get_reserves(&self) -> (Balance, Balance, u64) {
+            return (self.reserve_0, self.reserve_1, self.block_timestamp_last);
+        }
+
+        #[ink(message)]
+        pub fn price_0_cumulative_last(&self) -> u128 {
+            return self.price_0_cumulative_last;
+        }
+
+        #[ink(message)]
+        pub fn price_1_cumulative_last(&self) -> u128 {
+            return self.price_1_cumulative_last;
+        }
+
+        #[ink(message)]
+        pub fn k_last(&self) -> u128 {
+            return self.k_last;
+        }
+
+        #[ink(message)]
+        /// Force balances to match reserves
+        pub fn skim(&mut self, to: AccountId) -> Result<()> {
+            let contract = self.env().account_id();
+            let amount_0_calc = self
+                .balance_of(contract, self.asset_0)
+                .checked_sub(self.reserve_0);
+            if let Some(amount_0) = amount_0_calc {
+                self.transfer_tokens(contract, to, self.asset_0, amount_0)?;
+            }
+
+            let amount_1_calc = self
+                .balance_of(contract, self.asset_1)
+                .checked_sub(self.reserve_1);
+            if let Some(amount_1) = amount_1_calc {
+                self.transfer_tokens(contract, to, self.asset_1, amount_1)?;
+            }
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn sync(&mut self) -> Result<()> {
+            let contract = self.env().account_id();
+            let balance_0 = self.balance_of(contract, self.asset_0);
+            let balance_1 = self.balance_of(contract, self.asset_1);
+            self._update(balance_0, balance_1, self.reserve_0, self.reserve_1)?;
+            Ok(())
         }
 
         #[ink(message)]
@@ -496,11 +559,12 @@ pub mod amm {
             let asset_0 = self.asset_0;
             let asset_1 = self.asset_1;
 
-            let (reserve_0, reserve_1) = self.get_reserves();
+            let (reserve_0, reserve_1, _) = self.get_reserves();
 
             let balance_0 = self.balance_of(contract, asset_0);
             let balance_1 = self.balance_of(contract, asset_1);
 
+            // TODO check calculations
             let (amount_0, amount_1) = if asset == asset_0 {
                 (
                     amount,
@@ -530,6 +594,7 @@ pub mod amm {
                 return Err(Error::InsufficientBalance1);
             }
 
+            let fee_on = self._mint_fee(reserve_0, reserve_1);
             let total_supply = self.total_supply;
             let liquidity: Balance;
             if total_supply == 0 {
@@ -555,6 +620,10 @@ pub mod amm {
             let balance_1 = self.balance_of(contract, asset_1);
             self._update(balance_0, balance_1, reserve_0, reserve_1)?;
 
+            if fee_on {
+                self.k_last = reserve_0.saturating_mul(reserve_1);
+            }
+
             self.env().emit_event(Mint {
                 sender: self.env().caller(),
                 amount_0,
@@ -577,7 +646,7 @@ pub mod amm {
             }
 
             let contract = self.env().account_id();
-            let (reserve_0, reserve_1) = self.get_reserves();
+            let (reserve_0, reserve_1, _) = self.get_reserves();
             let asset_0 = self.asset_0;
             let asset_1 = self.asset_1;
             let balance_0 = self.balance_of(contract, asset_0);
@@ -632,7 +701,7 @@ pub mod amm {
             let asset_0 = self.asset_0;
             let asset_1 = self.asset_1;
 
-            let (reserve_0, reserve_1) = self.get_reserves();
+            let (reserve_0, reserve_1, _) = self.get_reserves();
             if asset_to_receive == asset_0 && amount_to_receive > reserve_0 {
                 return Err(Error::InsufficientLiquidity);
             } else if asset_to_receive == asset_1 && amount_to_receive > reserve_1 {
@@ -705,13 +774,62 @@ pub mod amm {
             reserve_0: Balance,
             reserve_1: Balance,
         ) -> Result<()> {
+            let block_timestamp = self.env().block_timestamp();
+            let time_elapsed = block_timestamp.overflowing_sub(self.block_timestamp_last).0; // overflow is desired
+
+            if time_elapsed > 0 && reserve_0 != 0 && reserve_1 != 0 {
+                // * never overflows, and + overflow is desired
+                self.price_0_cumulative_last = self
+                    .price_0_cumulative_last
+                    .overflowing_add(
+                        reserve_1
+                            .checked_div(reserve_0)
+                            .unwrap_or(0u128)
+                            .saturating_mul(time_elapsed.into()),
+                    )
+                    .0;
+                self.price_1_cumulative_last = self
+                    .price_1_cumulative_last
+                    .overflowing_add(
+                        reserve_0
+                            .checked_div(reserve_1)
+                            .unwrap_or(0u128)
+                            .saturating_mul(time_elapsed.into()),
+                    )
+                    .0;
+            }
+
             self.reserve_0 = balance_0;
             self.reserve_1 = balance_1;
+            self.block_timestamp_last = block_timestamp;
             self.env().emit_event(Sync {
                 reserve_0,
                 reserve_1,
             });
             Ok(())
+        }
+
+        fn _mint_fee(&mut self, reserve_0: Balance, reserve_1: Balance) -> bool {
+            let fee_on = self.fee_to.is_some();
+            if let Some(fee_to) = self.fee_to {
+                if self.k_last != 0 {
+                    let root_k = sqrt(reserve_0.saturating_mul(reserve_1));
+                    let root_k_last = sqrt(self.k_last);
+                    if root_k > root_k_last {
+                        let numerator = self
+                            .total_supply
+                            .saturating_mul(root_k.saturating_sub(root_k_last));
+                        let denominator = root_k.saturating_mul(5).saturating_add(root_k_last);
+                        let liquidity = numerator.saturating_div(denominator);
+                        if liquidity > 0 {
+                            self._mint(fee_to, liquidity);
+                        }
+                    }
+                }
+            } else if self.k_last != 0 {
+                self.k_last = 0;
+            }
+            fee_on
         }
 
         fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
