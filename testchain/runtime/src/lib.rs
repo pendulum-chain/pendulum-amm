@@ -72,6 +72,7 @@ pub type Index = u32;
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
 
+pub type Bytes4 = [u8; 4];
 pub type Bytes12 = [u8; 12];
 pub type AssetIssuer = [u8; 32];
 
@@ -300,6 +301,7 @@ impl Contains<AccountId> for DustRemovalWhitelist {
 pub enum CurrencyId {
 	Native,
 	StellarNative,
+	AlphaNum4 { code: Bytes4, issuer: AssetIssuer },
 	AlphaNum12 { code: Bytes12, issuer: AssetIssuer },
 }
 
@@ -315,7 +317,11 @@ impl TryFrom<(&str, AssetIssuer)> for CurrencyId {
 	fn try_from(value: (&str, AssetIssuer)) -> Result<Self, Self::Error> {
 		let slice = value.0;
 		let issuer = value.1;
-		if slice.len() > 0 && slice.len() <= 12 {
+		if slice.len() <= 4 {
+			let mut code: Bytes4 = [0; 4];
+			code[..slice.len()].copy_from_slice(slice.as_bytes());
+			Ok(CurrencyId::AlphaNum4 { code, issuer })
+		} else if slice.len() > 4 && slice.len() <= 12 {
 			let mut code: Bytes12 = [0; 12];
 			code[..slice.len()].copy_from_slice(slice.as_bytes());
 			Ok(CurrencyId::AlphaNum12 { code, issuer })
@@ -330,6 +336,14 @@ impl fmt::Debug for CurrencyId {
 		match self {
 			Self::Native => write!(f, "PEN"),
 			Self::StellarNative => write!(f, "XLM"),
+			Self::AlphaNum4 { code, issuer } => {
+				write!(
+					f,
+					"{{ code: {}, issuer: {} }}",
+					str::from_utf8(code).unwrap(),
+					str::from_utf8(issuer).unwrap()
+				)
+			},
 			Self::AlphaNum12 { code, issuer } => {
 				write!(
 					f,
