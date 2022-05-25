@@ -594,7 +594,7 @@ pub mod amm {
                 return Err(Error::InsufficientBalance1);
             }
 
-            let fee_on = self._mint_fee(reserve_0, reserve_1);
+            let fee_on = self._mint_fee(reserve_0, reserve_1)?;
             let total_supply = self.total_supply;
             let liquidity: Balance;
             if total_supply == 0 {
@@ -679,22 +679,34 @@ pub mod amm {
         #[ink(message)]
         pub fn swap_asset_1_for_asset_2(&mut self, amount_to_receive: Balance) -> Result<()> {
             let caller = self.env().caller();
-            self._swap(caller, amount_to_receive, self.asset_1)
+            let contract = self.env().account_id();
+
+            let amount_0_in =
+                self._get_amount_in(amount_to_receive, self.reserve_0, self.reserve_1)?; // TODO check if the reserves are in correct order
+            self.transfer_tokens(caller, contract, self.asset_0, amount_0_in)?;
+
+            self._swap(amount_to_receive, 0, caller)
         }
 
         #[ink(message)]
         pub fn swap_asset_2_for_asset_1(&mut self, amount_to_receive: Balance) -> Result<()> {
             let caller = self.env().caller();
-            self._swap(caller, amount_to_receive, self.asset_0)
+            let contract = self.env().account_id();
+
+            let amount_1_in =
+                self._get_amount_in(amount_to_receive, self.reserve_1, self.reserve_0)?;
+            self.transfer_tokens(caller, contract, self.asset_1, amount_1_in)?;
+
+            self._swap(0, amount_to_receive, caller)
         }
 
         fn _swap(
             &mut self,
-            from: AccountId,
-            amount_to_receive: Balance,
-            asset_to_receive: Asset,
+            amount_0_out: Balance,
+            amount_1_out: Balance,
+            to: AccountId,
         ) -> Result<()> {
-            if amount_to_receive <= 0 {
+            if amount_0_out <= 0 || amount_1_out <= 0 {
                 return Err(Error::InsufficientOutputAmount);
             }
 
@@ -702,30 +714,51 @@ pub mod amm {
             let asset_1 = self.asset_1;
 
             let (reserve_0, reserve_1, _) = self.get_reserves();
-            if asset_to_receive == asset_0 && amount_to_receive > reserve_0 {
-                return Err(Error::InsufficientLiquidity);
-            } else if asset_to_receive == asset_1 && amount_to_receive > reserve_1 {
+            if amount_0_out >= reserve_0 || amount_1_out >= reserve_1 {
                 return Err(Error::InsufficientLiquidity);
             }
 
+            // optimistically transfer tokens
             let contract = self.env().account_id();
+            if amount_0_out > 0 {
+                self.transfer_tokens(contract, to, asset_0, amount_0_out)?;
+            }
+            if amount_1_out > 0 {
+                self.transfer_tokens(contract, to, asset_1, amount_1_out)?;
+            }
+
             let balance_0 = self.balance_of(contract, asset_0);
             let balance_1 = self.balance_of(contract, asset_1);
 
-            let (amount_to_send, asset_to_send) = if asset_to_receive == asset_0 {
-                (
-                    amount_to_receive * balance_1 / (balance_0 - amount_to_receive),
-                    asset_1,
-                )
+            let amount_0_in = if balance_0 > reserve_0.saturating_sub(amount_0_out) {
+                balance_0.saturating_sub(reserve_0.saturating_sub(amount_0_out))
             } else {
-                (
-                    amount_to_receive * balance_0 / (balance_1 - amount_to_receive),
-                    asset_0,
-                )
+                0
+            };
+            let amount_1_in = if balance_1 > reserve_1.saturating_sub(amount_1_out) {
+                balance_1.saturating_sub(reserve_1.saturating_sub(amount_1_out))
+            } else {
+                0
             };
 
-            self.transfer_tokens(from, contract, asset_to_send, amount_to_send)?;
-            self.transfer_tokens(contract, from, asset_to_receive, amount_to_receive)?;
+            if amount_0_in <= 0 || amount_1_in <= 0 {
+                return Err(Error::InsufficientInputAmount);
+            }
+
+            let balance_0_adjusted = balance_0
+                .saturating_mul(1000)
+                .saturating_sub(amount_0_in.saturating_mul(3));
+            let balance_1_adjusted = balance_1
+                .saturating_mul(1000)
+                .saturating_sub(amount_1_in.saturating_mul(3));
+
+            if balance_0_adjusted.saturating_mul(balance_1_adjusted)
+                > reserve_0
+                    .saturating_mul(reserve_1)
+                    .saturating_mul(1000 * 1000)
+            {
+                return Err(Error::InvalidK);
+            }
 
             let balance_0 = self.balance_of(contract, asset_0);
             let balance_1 = self.balance_of(contract, asset_1);
@@ -733,9 +766,11 @@ pub mod amm {
             self._update(balance_0, balance_1, reserve_0, reserve_1)?;
             self.env().emit_event(Swap {
                 sender: self.env().caller(),
-                to: from,
-                amount_to_send,
-                amount_to_receive,
+                to,
+                amount_0_in,
+                amount_1_in,
+                amount_0_out,
+                amount_1_out,
             });
             Ok(())
         }
@@ -809,7 +844,7 @@ pub mod amm {
             Ok(())
         }
 
-        fn _mint_fee(&mut self, reserve_0: Balance, reserve_1: Balance) -> bool {
+        fn _mint_fee(&mut self, reserve_0: Balance, reserve_1: Balance) -> Result<bool> {
             let fee_on = self.fee_to.is_some();
             if let Some(fee_to) = self.fee_to {
                 if self.k_last != 0 {
@@ -822,14 +857,14 @@ pub mod amm {
                         let denominator = root_k.saturating_mul(5).saturating_add(root_k_last);
                         let liquidity = numerator.saturating_div(denominator);
                         if liquidity > 0 {
-                            self._mint(fee_to, liquidity);
+                            self._mint(fee_to, liquidity)?;
                         }
                     }
                 }
             } else if self.k_last != 0 {
                 self.k_last = 0;
             }
-            fee_on
+            Ok(fee_on)
         }
 
         fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
@@ -857,6 +892,7 @@ pub mod amm {
         }
 
         fn _get_amount_out(
+            &self,
             amount_in: Balance,
             reserve_in: Balance,
             reserve_out: Balance,
@@ -876,6 +912,7 @@ pub mod amm {
         }
 
         fn _get_amount_in(
+            &self,
             amount_out: Balance,
             reserve_in: Balance,
             reserve_out: Balance,
@@ -887,7 +924,7 @@ pub mod amm {
                 return Err(Error::InsufficientLiquidity);
             }
             let numerator = reserve_in.saturating_mul(reserve_out).saturating_mul(1000);
-            let denominator = reserve_out.saturating_sub(amount_out).mul(997);
+            let denominator = reserve_out.saturating_sub(amount_out).saturating_mul(997);
             Ok(numerator.saturating_div(denominator).saturating_add(1))
         }
     }
