@@ -540,6 +540,7 @@ pub mod amm {
             Ok(())
         }
 
+        /// Add liquidity
         #[ink(message)]
         pub fn deposit_asset_1(&mut self, amount: Balance) -> Result<Balance> {
             let caller = self.env().caller();
@@ -554,6 +555,7 @@ pub mod amm {
             self.mint(caller)
         }
 
+        /// Add liquidity
         #[ink(message)]
         pub fn deposit_asset_2(&mut self, amount: Balance) -> Result<Balance> {
             let caller = self.env().caller();
@@ -618,39 +620,55 @@ pub mod amm {
             Ok(liquidity)
         }
 
+        /// Remove Liquidity
         #[ink(message)]
-        pub fn withdraw(&mut self, amount: Balance, to: AccountId) -> Result<(Balance, Balance)> {
+        pub fn withdraw(&mut self, amount: Balance) -> Result<(Balance, Balance)> {
+            let caller = self.env().caller();
+            let contract = self.env().account_id();
+
             let total_supply = self.total_supply;
             if total_supply == 0 {
                 return Err(Error::WithdrawWithoutSupply);
             }
 
-            let user_lp_balance = self.lp_balance_of(to);
-            if user_lp_balance < amount {
-                return Err(Error::InsufficientLiquidityBalance);
-            }
+            self._transfer_liquidity(caller, contract, amount)?;
 
+            self.burn(caller)
+        }
+
+        fn burn(&mut self, to: AccountId) -> Result<(Balance, Balance)> {
             let contract = self.env().account_id();
             let (reserve_0, reserve_1, _) = self.get_reserves();
             let asset_0 = self.asset_0;
             let asset_1 = self.asset_1;
             let balance_0 = self.balance_of(contract, asset_0);
             let balance_1 = self.balance_of(contract, asset_1);
+            let liquidity = self.lp_balance_of(to);
 
-            let amount_0 = amount * balance_0 / ((total_supply - amount) + amount);
-            let amount_1 = amount * balance_1 / ((total_supply - amount) + amount);
+            let fee_on = self._mint_fee(reserve_0, reserve_1)?;
+            let total_supply = self.total_supply;
+            let amount_0 = liquidity
+                .saturating_mul(balance_0)
+                .saturating_div(total_supply);
+            let amount_1 = liquidity
+                .saturating_mul(balance_1)
+                .saturating_div(total_supply);
 
             if !(amount_0 > 0 || amount_1 > 0) {
                 return Err(Error::InsufficientLiquidityBurned);
             }
 
+            self._burn(contract, liquidity)?;
             self.transfer_tokens(contract, to, asset_0, amount_0)?;
             self.transfer_tokens(contract, to, asset_1, amount_1)?;
-            self._burn(to, amount)?;
 
             let balance_0 = self.balance_of(contract, asset_0);
             let balance_1 = self.balance_of(contract, asset_1);
             self._update(balance_0, balance_1, reserve_0, reserve_1)?;
+
+            if fee_on {
+                self.k_last = reserve_0.saturating_mul(reserve_1);
+            }
 
             self.env().emit_event(Burn {
                 sender: self.env().caller(),
@@ -661,6 +679,7 @@ pub mod amm {
             Ok((amount_0, amount_1))
         }
 
+        /// Swap
         #[ink(message)]
         pub fn swap_asset_1_for_asset_2(&mut self, amount_to_receive: Balance) -> Result<()> {
             let caller = self.env().caller();
@@ -673,6 +692,7 @@ pub mod amm {
             self._swap(amount_to_receive, 0, caller)
         }
 
+        /// Swap
         #[ink(message)]
         pub fn swap_asset_2_for_asset_1(&mut self, amount_to_receive: Balance) -> Result<()> {
             let caller = self.env().caller();
@@ -872,6 +892,27 @@ pub mod amm {
                 from: Some(from),
                 to: None,
                 value,
+            });
+            Ok(())
+        }
+
+        fn _transfer_liquidity(
+            &mut self,
+            from: AccountId,
+            to: AccountId,
+            amount: Balance,
+        ) -> Result<()> {
+            let balance = self.lp_balance_of(from);
+            if balance < amount {
+                return Err(Error::InsufficientBalance);
+            }
+            self.lp_balances.insert(from, &(balance - amount));
+            self.lp_balances
+                .insert(to, &(self.lp_balance_of(to) + amount));
+            self.env().emit_event(Transfer {
+                from: Some(from),
+                to: Some(to),
+                value: amount,
             });
             Ok(())
         }
