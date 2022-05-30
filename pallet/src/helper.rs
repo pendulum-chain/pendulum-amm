@@ -1,4 +1,4 @@
-use crate::{AmmExtended, Asset};
+use crate::{AmmExtension, Asset};
 use crate::pallet::{Config, Error, Event, Pallet, BalanceReserves, Price0CumulativeLast, Price1CumulativeLast, reserves, Reserves, KLast, TotalSupply, FeeTo, LpBalances, ContractId, AddressZero};
 use frame_support::traits::Get;
 

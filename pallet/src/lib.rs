@@ -54,7 +54,7 @@ pub mod pallet {
         + TypeInfo
         + IntegerSquareRoot;
 
-        type AmmExtension: AmmExtended<Self::AccountId,Self::Balance, Self::Moment>;
+        type AmmExtension: AmmExtension<Self::AccountId,Self::Balance, Self::Moment>;
 
         #[pallet::constant]
         type MinimumLiquidity: Get<Self::Balance>;
@@ -433,7 +433,7 @@ pub mod pallet {
     }
 }
 
-pub trait AmmExtended<AccountId, Balance, Moment> {
+pub trait AmmExtension<AccountId, Balance, Moment> {
     fn fetch_balance(owner: &AccountId, asset: Asset) -> Balance;
     fn transfer_balance(from: &AccountId, to: &AccountId, asset: Asset, amount: Balance);
 
@@ -442,7 +442,7 @@ pub trait AmmExtended<AccountId, Balance, Moment> {
 
 pub struct AmmExtendedEmpty<AccountId,Balance, Moment>(PhantomData<(AccountId, Balance, Moment)>);
 
-impl <AccountId, Balance, Moment> AmmExtended<AccountId,Balance, Moment> for AmmExtendedEmpty<AccountId, Balance, Moment>
+impl <AccountId, Balance, Moment> AmmExtension<AccountId,Balance, Moment> for AmmExtendedEmpty<AccountId, Balance, Moment>
     where Balance: Zero {
 
     fn fetch_balance(_owner: &AccountId, _asset: Asset) -> Balance {
