@@ -1,6 +1,6 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
-use contracts_node_runtime::{self, opaque::Block, RuntimeApi};
+use test_node_runtime::{self, opaque::Block, RuntimeApi};
 pub use sc_executor::NativeElseWasmExecutor;
 use sc_keystore::LocalKeystore;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager};
@@ -19,11 +19,11 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
 	type ExtendHostFunctions = ();
 
 	fn dispatch(method: &str, data: &[u8]) -> Option<Vec<u8>> {
-		contracts_node_runtime::api::dispatch(method, data)
+		test_node_runtime::api::dispatch(method, data)
 	}
 
 	fn native_version() -> sc_executor::NativeVersion {
-		contracts_node_runtime::native_version()
+		test_node_runtime::native_version()
 	}
 }
 

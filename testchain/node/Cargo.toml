@@ -1,5 +1,5 @@
 [package]
-name = "contracts-node"
+name = "test-node"
 version = "0.15.0"
 authors = ["Parity Technologies <admin@parity.io>"]
 description = "Substrate node configured for smart contracts via `pallet-contracts`."
@@ -14,7 +14,7 @@ publish = false
 targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
-name = "substrate-contracts-node"
+name = "pendulum-test-node"
 path = "src/main.rs"
 
 [dependencies]
@@ -56,7 +56,7 @@ frame-benchmarking = {  git = "https://github.com/paritytech/substrate",  branch
 frame-benchmarking-cli = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "frame-benchmarking-cli" }
 
 # Local Dependencies
-contracts-node-runtime = { path = "../runtime" }
+test-node-runtime = { path = "../runtime" }
 
 # CLI-specific dependencies
 try-runtime-cli = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "try-runtime-cli", optional = true }
@@ -67,8 +67,8 @@ substrate-build-script-utils = {  git = "https://github.com/paritytech/substrate
 [features]
 default = []
 runtime-benchmarks = [
-	"contracts-node-runtime/runtime-benchmarks",
+	"test-node-runtime/runtime-benchmarks",
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
-try-runtime = ["contracts-node-runtime/try-runtime", "try-runtime-cli"]
+try-runtime = ["test-node-runtime/try-runtime", "try-runtime-cli"]

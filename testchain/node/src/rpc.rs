@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use contracts_node_runtime::{opaque::Block, AccountId, Balance, BlockNumber, Hash, Index};
+use test_node_runtime::{opaque::Block, AccountId, Balance, BlockNumber, Hash, Index};
 use pallet_contracts_rpc::{Contracts, ContractsApi};
 pub use sc_rpc_api::DenyUnsafe;
 use sc_transaction_pool_api::TransactionPool;

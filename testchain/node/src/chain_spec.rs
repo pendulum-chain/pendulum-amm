@@ -1,4 +1,4 @@
-use contracts_node_runtime::{
+use test_node_runtime::{
 	AccountId, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig,
 	TokensConfig, WASM_BINARY,
 };
