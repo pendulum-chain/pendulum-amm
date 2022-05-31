@@ -1,6 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub use pallet::*;
+
 mod helper;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod mock;
 
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
@@ -10,10 +18,8 @@ use codec::{Codec, Encode, Decode, MaxEncodedLen};
 use sp_runtime::traits::{AtLeast32Bit, AtLeast32BitUnsigned, Scale, Zero};
 use sp_std::marker::PhantomData;
 
-pub use frame_system::pallet::*;
-
 pub type AssetCode = [u8; 12];
-pub type IssuerId = [u8; 32]; // encoded 32-bit array of 56 character stellar issuer (public key)
+pub type IssuerId = [u8; 32];
 
 #[derive(Debug, Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize, scale_info::TypeInfo))]
@@ -28,12 +34,13 @@ pub mod pallet {
 
     use super::*;
 
-    use std::fmt::Debug;
+    // use sp_std::fmt::Debug;
     use frame_support::{ensure, pallet_prelude::*};
     use frame_system::{ensure_signed, pallet_prelude::*};
     use sp_runtime::DispatchResultWithInfo;
-    use sp_runtime::traits::{IntegerSquareRoot, Saturating, CheckedDiv, CheckedSub, CheckedAdd};
+    use sp_runtime::traits::{IntegerSquareRoot, Saturating, CheckedDiv, CheckedSub, CheckedAdd, StaticLookup};
     use sp_std::cmp;
+    use substrate_stellar_sdk as stellar;
 
 
     /// Configure the pallet by specifying the parameters and types on which it depends.
@@ -49,12 +56,17 @@ pub mod pallet {
         + Default
         + Copy
         + MaybeSerializeDeserialize
-        + Debug
+        // + Debug
         + MaxEncodedLen
         + TypeInfo
         + IntegerSquareRoot;
 
         type AmmExtension: AmmExtension<Self::AccountId,Self::Balance, Self::Moment>;
+
+        // type AddressConversion: StaticLookup<
+        //     Source = <Self as frame_system::Config>::AccountId,
+        //     Target = stellar::PublicKey,
+        // >;
 
         #[pallet::constant]
         type MinimumLiquidity: Get<Self::Balance>;
@@ -88,9 +100,6 @@ pub mod pallet {
         // todo: this needs a proper name
         #[pallet::constant]
         type SwapMulBalance: Get<Self::Balance>;
-
-
-
     }
 
     #[pallet::genesis_config]
@@ -341,7 +350,7 @@ pub mod pallet {
             let balance_0 = balance_of::<T>(&contract, T::Asset0::get());
             let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
 
-            _update::<T>(balance_0, balance_1, reserves.reserve_0, reserves.reserve_1);
+            update_reserves::<T>(balance_0, balance_1, reserves.reserve_0, reserves.reserve_1);
 
             Ok(())
         }
@@ -356,6 +365,7 @@ pub mod pallet {
 
             transfer_tokens::<T>(&caller,&contract, T::Asset0::get(), amount)?;
             transfer_tokens::<T>(&caller,&contract, T::Asset1::get(), amount_1)?;
+
 
             mint::<T>(&caller,caller.clone()).map_err(|e| DispatchError::from(e))
         }
@@ -386,7 +396,7 @@ pub mod pallet {
                 Error::<T>::WithdrawWithoutSupply
             );
 
-            _transfer_liquidity::<T>(caller.clone(), contract, amount)?;
+            transfer_liquidity::<T>(caller.clone(), contract, amount)?;
 
             burn::<T>(&caller, caller.clone()).map_err(|e| DispatchError::from(e))
         }
@@ -407,7 +417,7 @@ pub mod pallet {
 
             transfer_tokens::<T>(&caller,&contract, T::Asset0::get(), amount_0_in)?;
 
-            _swap::<T>(amount_to_receive, T::Balance::zero(),&caller,caller.clone())
+            swap::<T>(amount_to_receive, T::Balance::zero(),&caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
 
@@ -426,7 +436,7 @@ pub mod pallet {
 
             transfer_tokens::<T>(&caller,&contract, T::Asset1::get(), amount_1_in)?;
 
-            _swap::<T>( T::Balance::zero(), amount_to_receive, &caller,caller.clone())
+            swap::<T>( T::Balance::zero(), amount_to_receive, &caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
 

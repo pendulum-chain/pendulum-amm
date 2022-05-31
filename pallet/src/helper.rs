@@ -7,8 +7,6 @@ use sp_std::cmp;
 
 type FuncResult<T> = Result<(),Error<T>>;
 
-
-
 pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T> {
     let zero = T::Balance::zero();
 
@@ -21,7 +19,7 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
     let amount_0 = balance_0.checked_sub(&reserve_0).unwrap_or(zero);
     let amount_1 = balance_1.checked_sub(&reserve_1).unwrap_or(zero);
 
-    let fee_on = _mint_fee::<T>(reserve_0, reserve_1)?;
+    let fee_on = mint_fee::<T>(reserve_0, reserve_1)?;
     let total_supply = <TotalSupply<T>>::get();
 
     let liquidity = if total_supply == zero {
@@ -30,7 +28,7 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
 
         let address_zero = <AddressZero<T>>::get().unwrap();
 
-        _mint::<T>(&address_zero, T::MinimumLiquidity::get())?;
+        inner_mint::<T>(&address_zero, T::MinimumLiquidity::get())?;
 
         liquidity
     } else {
@@ -50,8 +48,8 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
         return Err(Error::<T>::InsufficientLiquidityMinted)
     }
 
-    _mint::<T>(to,liquidity)?;
-    _update::<T>(balance_0, balance_1, reserve_0, reserve_1);
+    inner_mint::<T>(to,liquidity)?;
+    update_reserves::<T>(balance_0, balance_1, reserve_0, reserve_1);
 
     if fee_on {
         <KLast<T>>::put(reserve_0.saturating_mul(reserve_1));
@@ -79,7 +77,7 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
 
     let liquidity = <LpBalances<T>>::get(to).unwrap();
 
-    let fee_on = _mint_fee::<T>(reserve_0, reserve_1)?;
+    let fee_on = mint_fee::<T>(reserve_0, reserve_1)?;
     let total_supply = <TotalSupply<T>>::get();
 
     let amount_0 = {
@@ -96,7 +94,7 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
         return Err(Error::<T>::InsufficientLiquidityBurned)
     }
 
-    _burn::<T>(&contract,liquidity)?;
+    inner_burn::<T>(&contract,liquidity)?;
 
     transfer_tokens::<T>(&contract, to, T::Asset0::get(), amount_0)?;
     transfer_tokens::<T>(&contract, to,  T::Asset1::get(), amount_1)?;
@@ -104,7 +102,7 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
     let balance_0 = balance_of::<T>(&contract,  T::Asset0::get());
     let balance_1 = balance_of::<T>(&contract,  T::Asset1::get());
 
-    _update::<T>(balance_0,balance_1, reserve_0, reserve_1);
+    update_reserves::<T>(balance_0,balance_1, reserve_0, reserve_1);
 
 
     if fee_on {
@@ -122,7 +120,7 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
     Ok(())
 }
 
-pub fn _swap<T: Config>(
+pub fn swap<T: Config>(
     amount_0_out: T::Balance,
     amount_1_out: T::Balance,
     to: &T::AccountId,
@@ -188,7 +186,7 @@ pub fn _swap<T: Config>(
     let balance_0 = balance_of::<T>(&contract, T::Asset0::get());
     let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
 
-    _update::<T>(balance_0, balance_1, reserve_0, reserve_1);
+    update_reserves::<T>(balance_0, balance_1, reserve_0, reserve_1);
 
 
     <Pallet<T>>::deposit_event(Event::<T>::Swapped {
@@ -224,7 +222,7 @@ pub fn balance_of<T: Config>(owner:&T::AccountId, asset:Asset) -> T::Balance {
     T::AmmExtension::fetch_balance(owner,asset)
 }
 
-pub fn _update<T: Config >(
+pub fn update_reserves<T: Config >(
     balance_0: T::Balance,
     balance_1: T::Balance,
     reserve_0: T::Balance,
@@ -263,8 +261,7 @@ pub fn _update<T: Config >(
     <Pallet<T>>::deposit_event(Event::<T>::Synced { reserve_0, reserve_1 });
 }
 
-
-pub fn _mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Result<bool,Error<T>> {
+fn mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Result<bool,Error<T>> {
     let zero = T::Balance::zero();
     let k_last = <KLast<T>>::get();
 
@@ -291,7 +288,7 @@ pub fn _mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Res
                         .unwrap_or(zero);
 
                     if liquidity > zero {
-                        _mint(&fee_to,liquidity)?;
+                        inner_mint::<T>(&fee_to,liquidity)?;
                     }
                 }
             }
@@ -304,7 +301,7 @@ pub fn _mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Res
     }
 }
 
-pub fn _mint<T: Config>(to: &T::AccountId, value: T::Balance) -> FuncResult<T>  {
+fn inner_mint<T: Config>(to: &T::AccountId, value: T::Balance) -> FuncResult<T>  {
     <TotalSupply<T>>::mutate(|v| { *v += value; });
 
     <LpBalances<T>>::get(to).map(|balance| {
@@ -314,7 +311,7 @@ pub fn _mint<T: Config>(to: &T::AccountId, value: T::Balance) -> FuncResult<T>  
 }
 
 
-pub fn _burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T> {
+fn inner_burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T> {
     <TotalSupply<T>>::mutate(|v| { *v -= value; });
 
     <LpBalances<T>>::get(from).map(|balance| {
@@ -324,7 +321,7 @@ pub fn _burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T>
 }
 
 
-pub fn _transfer_liquidity<T: Config>(
+pub fn transfer_liquidity<T: Config>(
     from: T::AccountId,
     to: T::AccountId,
     amount: T::Balance
