@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use scale_info::TypeInfo;
 use codec::{Codec, Encode, Decode, MaxEncodedLen};
 
-use sp_runtime::traits::{AtLeast32Bit, AtLeast32BitUnsigned, Scale, Zero};
+use sp_runtime::traits::{AtLeast32BitUnsigned, Zero};
 use sp_std::marker::PhantomData;
 
 pub type AssetCode = [u8; 12];
@@ -37,10 +37,8 @@ pub mod pallet {
     // use sp_std::fmt::Debug;
     use frame_support::{ensure, pallet_prelude::*};
     use frame_system::{ensure_signed, pallet_prelude::*};
-    use sp_runtime::DispatchResultWithInfo;
-    use sp_runtime::traits::{IntegerSquareRoot, Saturating, CheckedDiv, CheckedSub, CheckedAdd, StaticLookup};
-    use sp_std::cmp;
-    use substrate_stellar_sdk as stellar;
+    use sp_runtime::traits::{IntegerSquareRoot, CheckedSub};
+    // use substrate_stellar_sdk as stellar;
 
 
     /// Configure the pallet by specifying the parameters and types on which it depends.
@@ -390,7 +388,6 @@ pub mod pallet {
             let caller = ensure_signed(origin)?;
             let contract = <ContractId<T>>::get().unwrap();
 
-            let total_supply = <TotalSupply<T>>::get();
             ensure!(
                 <TotalSupply<T>>::get() != T::Balance::zero(),
                 Error::<T>::WithdrawWithoutSupply
