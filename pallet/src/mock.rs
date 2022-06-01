@@ -2,6 +2,7 @@ use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use frame_support::{parameter_types, sp_io};
+use frame_support::pallet_prelude::GenesisBuild;
 use frame_support::traits::{ConstU16, ConstU64, ConstU128};
 use frame_system as system;
 use sp_runtime::{
@@ -118,7 +119,34 @@ thread_local! {
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+    ASSETSMAP0.with(|assets|{
+        let mut assets_map = assets.borrow_mut();
+        assets_map.insert(1,1000);
+        assets_map.insert(2, 200);
+        assets_map.insert(3, 300);
+        assets_map.insert(4, 400);
+    });
+
+    ASSETSMAP1.with(|assets|{
+        let mut assets_map = assets.borrow_mut();
+        assets_map.insert(1,900);
+        assets_map.insert(5, 500);
+        assets_map.insert(6, 600);
+        assets_map.insert(7, 700);
+    });
+
+    let mut system_cfg = system::GenesisConfig::default().build_storage::<Test>().unwrap();
+
+    amm::GenesisConfig::<Test> {
+        contract_id: Some(1),
+        zero_account: Some(0),
+        fee_to_setter: Some(2)
+    }
+    .assimilate_storage(&mut system_cfg)
+    .unwrap();
+
+    system_cfg.into()
+
 }
 
 pub struct Extension;

@@ -251,26 +251,26 @@ pub mod pallet {
 
         /// A token transfer occurred.
         /// parameters: [from,to,value]
-        Transferred{
+        Transfer{
             from: Option<T::AccountId>,
             to: Option<T::AccountId>,
             value: T::Balance
         },
 
-        Minted {
+        Mint {
             sender: T::AccountId,
             amount_0: T::Balance,
             amount_1: T::Balance
         },
 
-        Burned {
+        Burn {
             sender: T::AccountId,
             to: T::AccountId,
             amount_0: T::Balance,
             amount_1: T::Balance
         },
 
-        Swapped {
+        Swap {
             sender: T::AccountId,
             to: T::AccountId,
             amount_0_in: T::Balance,
@@ -279,7 +279,7 @@ pub mod pallet {
             amount_1_out: T::Balance
         },
 
-        Synced {
+        Sync {
             reserve_0: T::Balance,
             reserve_1: T::Balance
         }

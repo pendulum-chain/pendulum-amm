@@ -58,7 +58,7 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
         <KLast<T>>::put(reserve_0.saturating_mul(reserve_1));
     }
 
-    <Pallet<T>>::deposit_event(Event::<T>::Minted {
+    <Pallet<T>>::deposit_event(Event::<T>::Mint {
         sender: caller,
         amount_0,
         amount_1
@@ -107,13 +107,12 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
 
     _update::<T>(balance_0,balance_1, reserve_0, reserve_1);
 
-
     if fee_on {
         let k_last = reserve_0.saturating_mul(reserve_1);
         <KLast<T>>::put(k_last);
     }
 
-    <Pallet<T>>::deposit_event(Event::<T>::Burned {
+    <Pallet<T>>::deposit_event(Event::<T>::Burn {
         sender: caller,
         to: to.clone(),
         amount_0,
@@ -191,7 +190,7 @@ pub fn _swap<T: Config>(
     _update::<T>(balance_0, balance_1, reserve_0, reserve_1);
 
 
-    <Pallet<T>>::deposit_event(Event::<T>::Swapped {
+    <Pallet<T>>::deposit_event(Event::<T>::Swap {
         sender,
         to: to.clone(),
         amount_0_in,
@@ -260,7 +259,7 @@ pub fn _update<T: Config >(
     let reserve = BalanceReserves::new(balance_0, balance_1, block_timestamp);
     <Reserves<T>>::put(reserve);
 
-    <Pallet<T>>::deposit_event(Event::<T>::Synced { reserve_0, reserve_1 });
+    <Pallet<T>>::deposit_event(Event::<T>::Sync { reserve_0, reserve_1 });
 }
 
 fn _mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Result<bool,Error<T>> {
@@ -338,7 +337,7 @@ pub fn _transfer_liquidity<T: Config>(
             <LpBalances<T>>::insert(from, from_balance - amount);
             <LpBalances<T>>::insert(to,  to_balance + amount);
 
-            <Pallet<T>>::deposit_event(Event::<T>::Transferred {
+            <Pallet<T>>::deposit_event(Event::<T>::Transfer {
                 from: None,
                 to: None,
                 value: amount
