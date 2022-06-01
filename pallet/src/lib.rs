@@ -12,6 +12,7 @@ mod mock;
 
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
+
 use scale_info::TypeInfo;
 use codec::{Codec, Encode, Decode, MaxEncodedLen};
 
@@ -21,11 +22,20 @@ use sp_std::marker::PhantomData;
 pub type AssetCode = [u8; 12];
 pub type IssuerId = [u8; 32];
 
-#[derive(Debug, Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize, scale_info::TypeInfo))]
+#[derive(Debug, Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen,TypeInfo)]
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub struct Asset {
     code: AssetCode,
     issuer: IssuerId
+}
+
+impl Asset {
+    pub const fn new(code:AssetCode, issuer: IssuerId) -> Self {
+        Self {
+            code,
+            issuer
+        }
+    }
 }
 
 #[frame_support::pallet]
@@ -34,7 +44,7 @@ pub mod pallet {
 
     use super::*;
 
-    // use sp_std::fmt::Debug;
+    use sp_std::{fmt::Debug, vec::Vec};
     use frame_support::{ensure, pallet_prelude::*};
     use frame_system::{ensure_signed, pallet_prelude::*};
     use sp_runtime::traits::{IntegerSquareRoot, CheckedSub};
@@ -54,7 +64,7 @@ pub mod pallet {
         + Default
         + Copy
         + MaybeSerializeDeserialize
-        // + Debug
+        + Debug
         + MaxEncodedLen
         + TypeInfo
         + IntegerSquareRoot;
@@ -75,7 +85,7 @@ pub mod pallet {
         #[pallet::constant]
         type Asset1: Get<Asset>;
 
-        // a multiplier for the denominator in mint_fee
+        // a multiplier for the denominator in _mint_fee
         // expected value is 5
         // todo: this needs a proper name
         #[pallet::constant]
@@ -102,9 +112,9 @@ pub mod pallet {
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
-        contract_id: Option<T::AccountId>,
-        zero_account: Option<T::AccountId>,
-        fee_to_setter: Option<T::AccountId>
+        pub contract_id: Option<T::AccountId>,
+        pub zero_account: Option<T::AccountId>,
+        pub fee_to_setter: Option<T::AccountId>
     }
 
     #[cfg(feature = "std")]
@@ -180,8 +190,8 @@ pub mod pallet {
     #[pallet::getter(fn k_last)]
     pub(super) type KLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
 
-    #[derive(Debug,Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen)]
-    #[cfg_attr(feature = "std", derive(Serialize, Deserialize, scale_info::TypeInfo))]
+    #[derive(Debug,Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen, TypeInfo)]
+    #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
     pub(super) struct BalanceReserves<Balance,Moment> {
         reserve_0:Balance,
         reserve_1:Balance,
@@ -348,7 +358,7 @@ pub mod pallet {
             let balance_0 = balance_of::<T>(&contract, T::Asset0::get());
             let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
 
-            update_reserves::<T>(balance_0, balance_1, reserves.reserve_0, reserves.reserve_1);
+            _update::<T>(balance_0, balance_1, reserves.reserve_0, reserves.reserve_1);
 
             Ok(())
         }
@@ -393,7 +403,7 @@ pub mod pallet {
                 Error::<T>::WithdrawWithoutSupply
             );
 
-            transfer_liquidity::<T>(caller.clone(), contract, amount)?;
+            _transfer_liquidity::<T>(caller.clone(), contract, amount)?;
 
             burn::<T>(&caller, caller.clone()).map_err(|e| DispatchError::from(e))
         }
@@ -414,7 +424,7 @@ pub mod pallet {
 
             transfer_tokens::<T>(&caller,&contract, T::Asset0::get(), amount_0_in)?;
 
-            swap::<T>(amount_to_receive, T::Balance::zero(),&caller,caller.clone())
+            _swap::<T>(amount_to_receive, T::Balance::zero(),&caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
 
@@ -433,7 +443,7 @@ pub mod pallet {
 
             transfer_tokens::<T>(&caller,&contract, T::Asset1::get(), amount_1_in)?;
 
-            swap::<T>( T::Balance::zero(), amount_to_receive, &caller,caller.clone())
+            _swap::<T>( T::Balance::zero(), amount_to_receive, &caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
 
