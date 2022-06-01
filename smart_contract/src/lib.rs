@@ -951,7 +951,6 @@ pub mod amm {
 	mod tests {
 		/// Imports all the definitions from the outer scope so we can use them here.
 		use super::*;
-		use ink_env::debug_println;
 		use ink_lang as ink;
 		use ink_prelude::collections::HashMap;
 		use lazy_static::lazy_static;
@@ -1349,9 +1348,7 @@ pub mod amm {
 			let swap_amount = 200_000;
 			let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
 
-			debug_println!("BALANCES: {:?}", BALANCES.lock().unwrap());
 			let result = pair.swap_asset_2_for_asset_1(swap_amount);
-			debug_println!("BALANCES post swap: {:?}", BALANCES.lock().unwrap());
 			result.expect("Encountered error in swap");
 
 			let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
