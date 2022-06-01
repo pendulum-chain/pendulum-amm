@@ -286,7 +286,6 @@ pub mod amm {
 		/// Returned if not enough allowance to fulfill a request is available.
 		InsufficientAllowance,
 		InsufficientLiquidity,
-		InsufficientLiquidityBalance,
 		InsufficientBalance0,
 		InsufficientBalance1,
 		InsufficientLiquidityMinted,
@@ -538,11 +537,19 @@ pub mod amm {
 			let caller = self.env().caller();
 			let contract = self.env().account_id();
 
-			let amount_0_desired = amount;
-			let amount_1_optimal = self.quote(amount_0_desired, self.reserve_0, self.reserve_1)?;
+			let (reserve_0, reserve_1, _) = self.get_reserves();
+			let (amount_0, amount_1) = if reserve_0 == 0 && reserve_1 == 0 {
+				(amount, amount)
+			} else {
+				let amount_0_desired = amount;
+				let amount_1_optimal =
+					self.quote(amount_0_desired, self.reserve_0, self.reserve_1)?;
 
-			self.transfer_tokens(caller, contract, self.asset_0, amount_0_desired)?;
-			self.transfer_tokens(caller, contract, self.asset_1, amount_1_optimal)?;
+				(amount_0_desired, amount_1_optimal)
+			};
+
+			self.transfer_tokens(caller, contract, self.asset_0, amount_0)?;
+			self.transfer_tokens(caller, contract, self.asset_1, amount_1)?;
 
 			self.mint(caller)
 		}
@@ -553,11 +560,19 @@ pub mod amm {
 			let caller = self.env().caller();
 			let contract = self.env().account_id();
 
-			let amount_1_desired = amount;
-			let amount_0_optimal = self.quote(amount_1_desired, self.reserve_1, self.reserve_0)?;
+			let (reserve_0, reserve_1, _) = self.get_reserves();
+			let (amount_0, amount_1) = if reserve_0 == 0 && reserve_1 == 0 {
+				(amount, amount)
+			} else {
+				let amount_1_desired = amount;
+				let amount_0_optimal =
+					self.quote(amount_1_desired, self.reserve_1, self.reserve_0)?;
 
-			self.transfer_tokens(caller, contract, self.asset_0, amount_0_optimal)?;
-			self.transfer_tokens(caller, contract, self.asset_1, amount_1_desired)?;
+				(amount_0_optimal, amount_1_desired)
+			};
+
+			self.transfer_tokens(caller, contract, self.asset_0, amount_0)?;
+			self.transfer_tokens(caller, contract, self.asset_1, amount_1)?;
 
 			self.mint(caller)
 		}
@@ -566,10 +581,8 @@ pub mod amm {
 			let contract = self.env().account_id();
 			let (reserve_0, reserve_1, _) = self.get_reserves();
 
-			let asset_0 = self.asset_0;
-			let asset_1 = self.asset_1;
-			let balance_0 = self.balance_of(contract, asset_0);
-			let balance_1 = self.balance_of(contract, asset_1);
+			let balance_0 = self.balance_of(contract, self.asset_0);
+			let balance_1 = self.balance_of(contract, self.asset_1);
 			let amount_0 = balance_0.checked_sub(reserve_0).unwrap_or(0);
 			let amount_1 = balance_1.checked_sub(reserve_1).unwrap_or(0);
 
@@ -579,7 +592,7 @@ pub mod amm {
 			if total_supply == 0 {
 				liquidity =
 					sqrt(amount_0.saturating_mul(amount_1)).saturating_sub(MINIMUM_LIQUIDITY);
-				let address_zero = AccountId::from([0x01; 32]);
+				let address_zero = AccountId::from([0x0; 32]);
 				self._mint(address_zero, MINIMUM_LIQUIDITY)?; // permanently lock first liquidity tokens
 			} else {
 				liquidity = core::cmp::min(
@@ -588,7 +601,7 @@ pub mod amm {
 				);
 			}
 
-			if liquidity <= 0 {
+			if !(liquidity > 0) {
 				return Err(Error::InsufficientLiquidityMinted)
 			}
 
@@ -634,7 +647,8 @@ pub mod amm {
 			let amount_0 = liquidity.saturating_mul(balance_0).saturating_div(total_supply);
 			let amount_1 = liquidity.saturating_mul(balance_1).saturating_div(total_supply);
 
-			if !(amount_0 > 0 || amount_1 > 0) {
+			ink_env::debug_println!("amount_0: {}, amount_1: {}", amount_0, amount_1);
+			if !(amount_0 > 0 && amount_1 > 0) {
 				return Err(Error::InsufficientLiquidityBurned)
 			}
 
@@ -665,7 +679,7 @@ pub mod amm {
 				self.get_amount_in(amount_to_receive, self.reserve_0, self.reserve_1)?; // TODO check if the reserves are in correct order
 			self.transfer_tokens(caller, contract, self.asset_0, amount_0_in)?;
 
-			self._swap(amount_to_receive, 0, caller)
+			self._swap(0, amount_to_receive, caller)
 		}
 
 		/// Swap
@@ -678,7 +692,7 @@ pub mod amm {
 				self.get_amount_in(amount_to_receive, self.reserve_1, self.reserve_0)?;
 			self.transfer_tokens(caller, contract, self.asset_1, amount_1_in)?;
 
-			self._swap(0, amount_to_receive, caller)
+			self._swap(amount_to_receive, 0, caller)
 		}
 
 		fn _swap(
@@ -687,7 +701,7 @@ pub mod amm {
 			amount_1_out: Balance,
 			to: AccountId,
 		) -> Result<()> {
-			if amount_0_out <= 0 || amount_1_out <= 0 {
+			if !(amount_0_out > 0 || amount_1_out > 0) {
 				return Err(Error::InsufficientOutputAmount)
 			}
 
@@ -695,7 +709,7 @@ pub mod amm {
 			let asset_1 = self.asset_1;
 
 			let (reserve_0, reserve_1, _) = self.get_reserves();
-			if amount_0_out >= reserve_0 || amount_1_out >= reserve_1 {
+			if !(amount_0_out < reserve_0 && amount_1_out < reserve_1) {
 				return Err(Error::InsufficientLiquidity)
 			}
 
@@ -722,7 +736,7 @@ pub mod amm {
 				0
 			};
 
-			if amount_0_in <= 0 || amount_1_in <= 0 {
+			if !(amount_0_in > 0 || amount_1_in > 0) {
 				return Err(Error::InsufficientInputAmount)
 			}
 
@@ -731,8 +745,8 @@ pub mod amm {
 			let balance_1_adjusted =
 				balance_1.saturating_mul(1000).saturating_sub(amount_1_in.saturating_mul(3));
 
-			if balance_0_adjusted.saturating_mul(balance_1_adjusted) >
-				reserve_0.saturating_mul(reserve_1).saturating_mul(1000 * 1000)
+			if !(balance_0_adjusted.saturating_mul(balance_1_adjusted) >=
+				reserve_0.saturating_mul(reserve_1).saturating_mul(1000 * 1000))
 			{
 				return Err(Error::InvalidK)
 			}
@@ -877,10 +891,10 @@ pub mod amm {
 			reserve_in: Balance,
 			reserve_out: Balance,
 		) -> Result<Balance> {
-			if amount_in <= 0 {
+			if !(amount_in > 0) {
 				return Err(Error::InsufficientInputAmount)
 			}
-			if reserve_in <= 0 || reserve_out <= 0 {
+			if !(reserve_in > 0 && reserve_out > 0) {
 				return Err(Error::InsufficientLiquidity)
 			}
 			let amount_in_with_fee = amount_in.saturating_mul(997);
@@ -895,10 +909,10 @@ pub mod amm {
 			reserve_in: Balance,
 			reserve_out: Balance,
 		) -> Result<Balance> {
-			if amount_out <= 0 {
+			if !(amount_out > 0) {
 				return Err(Error::InsufficientOutputAmount)
 			}
-			if reserve_in <= 0 || reserve_out <= 0 {
+			if !(reserve_in > 0 && reserve_out > 0) {
 				return Err(Error::InsufficientLiquidity)
 			}
 			let numerator = reserve_in.saturating_mul(reserve_out).saturating_mul(1000);
@@ -912,10 +926,10 @@ pub mod amm {
 			reserve_a: Balance,
 			reserve_b: Balance,
 		) -> Result<Balance> {
-			if amount_a <= 0 {
+			if !(amount_a > 0) {
 				return Err(Error::InsufficientInputAmount)
 			}
-			if reserve_a <= 0 || reserve_b <= 0 {
+			if !(reserve_a > 0 && reserve_b > 0) {
 				return Err(Error::InsufficientLiquidity)
 			}
 			let amount_b = amount_a.saturating_mul(reserve_b).saturating_div(reserve_a);
@@ -1152,12 +1166,8 @@ pub mod amm {
 			let gained_lp = result.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
-			debug_println!("BALANCES pre swap: {:?}", BALANCES.lock().unwrap());
-
 			// swap to make it unbalanced
 			pair.swap_asset_2_for_asset_1(10).expect("Swap did not work");
-
-			debug_println!("BALANCES post swap: {:?}", BALANCES.lock().unwrap());
 
 			let user_balance_0_pre_deposit = pair.balance_of(to, pair.asset_0);
 			let user_balance_1_pre_deposit = pair.balance_of(to, pair.asset_1);
@@ -1172,8 +1182,6 @@ pub mod amm {
 
 			let amount_0_in = user_balance_0_pre_deposit - user_balance_0_post_deposit;
 			let amount_1_in = user_balance_1_pre_deposit - user_balance_1_post_deposit;
-
-			debug_println!("amount_0_in: {}, amount_1_in: {}", amount_0_in, amount_1_in);
 
 			assert_eq!(deposit_amount, amount_0_in);
 			// expect that amount_0_in is less than amount_1_in because
@@ -1201,7 +1209,7 @@ pub mod amm {
 			let gained_lp = pair.deposit_asset_1(5_000).expect("Could not deposit");
 			// try withdrawing more LP than account has
 			let result = pair.withdraw(gained_lp + 2);
-			assert_eq!(Err(Error::InsufficientLiquidityBalance), result);
+			assert_eq!(Err(Error::InsufficientBalance), result);
 		}
 
 		#[ink::test]
@@ -1218,7 +1226,7 @@ pub mod amm {
 			let initial_supply = 1_000_000;
 			add_supply_for_account(to, initial_supply, &pair);
 
-			let deposit_amount = 5_000_00;
+			let deposit_amount = 50_000;
 			let result = pair.deposit_asset_1(deposit_amount);
 			let gained_lp = result.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected received amount of LP to be greater than 0");
@@ -1226,7 +1234,8 @@ pub mod amm {
 			let user_balance_0_pre_withdraw = pair.balance_of(to, pair.asset_0);
 			let user_balance_1_pre_withdraw = pair.balance_of(to, pair.asset_1);
 
-			let result = pair.withdraw(gained_lp);
+			// We cannot withdraw all LP because the pair would be empty so we withdraw with 1 less LP token
+			let result = pair.withdraw(gained_lp - 1);
 			let (amount_0, amount_1) = result.expect("Could not unwrap result");
 			assert_eq!(true, amount_0 > 0, "Expected received amount to be greater than 0");
 			assert_eq!(true, amount_1 > 0, "Expected received amount to be greater than 0");
@@ -1252,7 +1261,7 @@ pub mod amm {
 			let initial_supply = 1_000_000;
 			add_supply_for_account(to, initial_supply, &pair);
 
-			let deposit_amount = 5_000_00;
+			let deposit_amount = 500_000;
 			// do initial deposit which initiates total_supply
 			pair.deposit_asset_1(deposit_amount).expect("Could not deposit");
 
@@ -1331,7 +1340,9 @@ pub mod amm {
 			let swap_amount = 200_000;
 			let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
 
+			debug_println!("BALANCES: {:?}", BALANCES.lock().unwrap());
 			let result = pair.swap_asset_2_for_asset_1(swap_amount);
+			debug_println!("BALANCES post swap: {:?}", BALANCES.lock().unwrap());
 			result.expect("Encountered error in swap");
 
 			let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
