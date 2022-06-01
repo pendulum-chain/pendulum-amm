@@ -31,6 +31,8 @@ use sp_std::{fmt, prelude::*};
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
+use pallet_pendulum_amm::AmmExtension;
+
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
 	construct_runtime,
@@ -254,6 +256,37 @@ impl pallet_timestamp::Config for Runtime {
 	type WeightInfo = ();
 }
 
+impl pallet_pendulum_amm::Config for Runtime {
+	type Event = Event;
+	type Balance = Balance;
+	type CurrencyId = CurrencyId;
+	type AmmExtension = Extension;
+	type MinimumLiquidity = ConstU128<1>;
+
+	type MintFee = ConstU128<5>;
+	type SubFee = ConstU128<997>;
+	type MulBalance = ConstU128<1000>;
+	type SwapMulBalance = ConstU128<3>;
+}
+
+
+pub struct Extension;
+
+impl AmmExtension<AccountId, CurrencyId, Balance, u64> for Extension {
+	fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance {
+		todo!()
+	}
+
+	fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance) {
+		todo!()
+	}
+
+	fn moment_to_balance_type(moment: u64) -> Balance {
+		todo!()
+	}
+}
+
+
 parameter_types! {
 	pub const ExistentialDeposit: u128 = EXISTENTIAL_DEPOSIT;
 	pub const MaxLocks: u32 = 50;
@@ -426,7 +459,7 @@ pub struct BalanceChainExtension;
 use sp_runtime::DispatchError;
 
 use core::convert::TryFrom;
-use frame_support::traits::Contains;
+use frame_support::traits::{ConstU128, Contains};
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_std::str;
@@ -594,7 +627,8 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		Contracts: pallet_contracts,
 		Currencies: orml_currencies,
-		Tokens: orml_tokens exclude_parts { Call }
+		Tokens: orml_tokens exclude_parts { Call },
+		Amm: pallet_pendulum_amm
 	}
 );
 

@@ -1,4 +1,3 @@
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use frame_support::{parameter_types, sp_io};
@@ -12,13 +11,24 @@ use sp_runtime::{
 
 use crate as amm;
 use sp_runtime::app_crypto::sp_core;
-use amm::{pallet::Config, Asset, AmmExtension};
+use amm::{pallet::Config, AmmExtension};
 
 type UncheckedExtrinsic = system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = system::mocking::MockBlock<Test>;
 type AccountId = u64;
 type Balance = u128;
 type Moment = u64;
+
+
+pub type AssetCode = [u8; 12];
+pub type IssuerId = [u8; 32];
+
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, codec::Encode, codec::Decode, Eq, PartialEq, Default, codec::MaxEncodedLen, scale_info::TypeInfo, serde::Serialize, serde::Deserialize)]
+pub struct Asset {
+    code: AssetCode,
+    issuer: IssuerId
+}
+
 
 const MILLISECS_PER_BLOCK: u64 = 6000;
 const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
@@ -94,19 +104,13 @@ impl pallet_timestamp::Config for Test {
     type WeightInfo = ();
 }
 
-parameter_types! {
-	pub const Asset0: Asset = ASSET_0;
-    pub const Asset1: Asset = ASSET_1;
-}
-
 impl Config for Test {
     type Event = Event;
     type Balance = Balance;
+    type CurrencyId = Asset;
     type AmmExtension = Extension;
     // type AddressConversion = ();
     type MinimumLiquidity = ConstU128<1>;
-    type Asset0 = Asset0;
-    type Asset1 = Asset1;
     type MintFee = ConstU128<5>;
     type SubFee = ConstU128<997>;
     type MulBalance = ConstU128<1000>;
@@ -130,6 +134,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     ASSETSMAP1.with(|assets|{
         let mut assets_map = assets.borrow_mut();
         assets_map.insert(1,900);
+        assets_map.insert(2, 201);
         assets_map.insert(5, 500);
         assets_map.insert(6, 600);
         assets_map.insert(7, 700);
@@ -140,7 +145,9 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     amm::GenesisConfig::<Test> {
         contract_id: Some(1),
         zero_account: Some(0),
-        fee_to_setter: Some(2)
+        fee_to_setter: Some(2),
+        asset_0: Some(ASSET_0),
+        asset_1: Some(ASSET_1)
     }
     .assimilate_storage(&mut system_cfg)
     .unwrap();
@@ -151,7 +158,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
 pub struct Extension;
 
-impl AmmExtension<AccountId, Balance, Moment> for Extension {
+impl AmmExtension<AccountId,Asset,Balance,Moment> for Extension {
     fn fetch_balance(owner: &AccountId, asset: Asset) -> Balance {
         if asset == ASSET_0 {
             ASSETSMAP0.with(|assets| {

@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use crate::{AmmExtension, Asset};
+use crate::{AmmExtension, Asset0, Asset1};
 use crate::pallet::{Config, Error, Event, Pallet, BalanceReserves, Price0CumulativeLast, Price1CumulativeLast, reserves, Reserves, KLast, TotalSupply, FeeTo, LpBalances, ContractId, AddressZero};
 use frame_support::traits::Get;
 
@@ -16,8 +16,11 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
     let contract = <ContractId<T>>::get().unwrap();
     let (reserve_0,reserve_1,_) = reserves::<T>();
 
-    let balance_0 = balance_of::<T>(&contract,T::Asset0::get());
-    let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
+    let asset_0 = <Asset0<T>>::get().unwrap();
+    let asset_1 = <Asset1<T>>::get().unwrap();
+
+    let balance_0 = balance_of::<T>(&contract,asset_0);
+    let balance_1 = balance_of::<T>(&contract, asset_1);
 
     let amount_0 = balance_0.checked_sub(&reserve_0).unwrap_or(zero);
     let amount_1 = balance_1.checked_sub(&reserve_1).unwrap_or(zero);
@@ -31,11 +34,11 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
 
         let address_zero = <AddressZero<T>>::get().unwrap();
 
-        _mint::<T>(&address_zero, T::MinimumLiquidity::get())?;
+        _mint::<T>(&address_zero, T::MinimumLiquidity::get());
 
         liquidity
     } else {
-        cmp::min(
+        let res = cmp::min(
             amount_0
                 .saturating_mul(total_supply)
                 .checked_div(&reserve_0)
@@ -44,14 +47,16 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
                 .saturating_mul(total_supply)
                 .checked_div(&reserve_1)
                 .unwrap_or(zero)
-        )
+        );
+
+        res
     };
 
     if liquidity <= zero {
         return Err(Error::<T>::InsufficientLiquidityMinted)
     }
 
-    _mint::<T>(to,liquidity)?;
+    _mint::<T>(to,liquidity);
     _update::<T>(balance_0, balance_1, reserve_0, reserve_1);
 
     if fee_on {
@@ -75,8 +80,11 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
     let contract = <ContractId<T>>::get().unwrap();
     let (reserve_0,reserve_1,_) = reserves::<T>();
 
-    let balance_0 = balance_of::<T>(&contract,T::Asset0::get());
-    let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
+    let asset_0 = <Asset0<T>>::get().unwrap();
+    let asset_1 = <Asset1<T>>::get().unwrap();
+
+    let balance_0 = balance_of::<T>(&contract,asset_0.clone());
+    let balance_1 = balance_of::<T>(&contract, asset_1.clone());
 
     let liquidity = <LpBalances<T>>::get(to).unwrap();
 
@@ -99,11 +107,11 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
 
     _burn::<T>(&contract,liquidity)?;
 
-    transfer_tokens::<T>(&contract, to, T::Asset0::get(), amount_0)?;
-    transfer_tokens::<T>(&contract, to,  T::Asset1::get(), amount_1)?;
+    transfer_tokens::<T>(&contract, to, asset_0.clone(), amount_0)?;
+    transfer_tokens::<T>(&contract, to,  asset_1.clone(), amount_1)?;
 
-    let balance_0 = balance_of::<T>(&contract,  T::Asset0::get());
-    let balance_1 = balance_of::<T>(&contract,  T::Asset1::get());
+    let balance_0 = balance_of::<T>(&contract,  asset_0);
+    let balance_1 = balance_of::<T>(&contract,  asset_1);
 
     _update::<T>(balance_0,balance_1, reserve_0, reserve_1);
 
@@ -129,6 +137,8 @@ pub fn _swap<T: Config>(
     sender: T::AccountId
 ) -> FuncResult<T> {
     let zero = T::Balance::zero();
+    let asset_0 = <Asset0<T>>::get().unwrap();
+    let asset_1 = <Asset1<T>>::get().unwrap();
 
     if amount_0_out <= zero || amount_1_out <= zero {
         return Err(Error::<T>::InsufficientOutputAmount)
@@ -144,15 +154,15 @@ pub fn _swap<T: Config>(
     let contract = <ContractId<T>>::get().unwrap();
 
     if amount_0_out > zero {
-        transfer_tokens::<T>(&contract,to,T::Asset0::get(),amount_0_out)?;
+        transfer_tokens::<T>(&contract,to,asset_0.clone(),amount_0_out)?;
     }
 
     if amount_1_out > zero {
-        transfer_tokens::<T>(&contract,to,T::Asset1::get(),amount_1_out)?;
+        transfer_tokens::<T>(&contract,to,asset_1.clone(),amount_1_out)?;
     }
 
-    let balance_0 = balance_of::<T>(&contract,T::Asset0::get());
-    let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
+    let balance_0 = balance_of::<T>(&contract,asset_0.clone());
+    let balance_1 = balance_of::<T>(&contract, asset_1.clone());
 
     let amount_0_in = if balance_0 > reserve_0.saturating_sub(amount_0_out) {
         balance_0.saturating_sub(reserve_0.saturating_sub(amount_0_out))
@@ -184,8 +194,8 @@ pub fn _swap<T: Config>(
         return Err(Error::<T>::InvalidK)
     }
 
-    let balance_0 = balance_of::<T>(&contract, T::Asset0::get());
-    let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
+    let balance_0 = balance_of::<T>(&contract, asset_0);
+    let balance_1 = balance_of::<T>(&contract, asset_1);
 
     _update::<T>(balance_0, balance_1, reserve_0, reserve_1);
 
@@ -206,7 +216,7 @@ pub fn _swap<T: Config>(
 pub fn transfer_tokens<T: Config>(
     from: &T::AccountId,
     to: &T::AccountId,
-    asset: Asset,
+    asset: T::CurrencyId,
     amount: T::Balance
 ) -> Result<(),Error<T>> {
     let from_balance = balance_of::<T>(from,asset.clone());
@@ -219,7 +229,7 @@ pub fn transfer_tokens<T: Config>(
     Ok(())
 }
 
-pub fn balance_of<T: Config>(owner:&T::AccountId, asset:Asset) -> T::Balance {
+pub fn balance_of<T: Config>(owner:&T::AccountId, asset: T::CurrencyId) -> T::Balance {
     T::AmmExtension::fetch_balance(owner,asset)
 }
 
@@ -289,7 +299,7 @@ fn _mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Result<
                         .unwrap_or(zero);
 
                     if liquidity > zero {
-                        _mint::<T>(&fee_to,liquidity)?;
+                        _mint::<T>(&fee_to,liquidity);
                     }
                 }
             }
@@ -302,13 +312,11 @@ fn _mint_fee<T: Config>(reserve_0: T::Balance, reserve_1: T::Balance) -> Result<
     }
 }
 
-fn _mint<T: Config>(to: &T::AccountId, value: T::Balance) -> FuncResult<T>  {
+fn _mint<T: Config>(to: &T::AccountId, value: T::Balance) {
     <TotalSupply<T>>::mutate(|v| { *v += value; });
 
-    <LpBalances<T>>::get(to).map(|balance| {
-        <LpBalances<T>>::insert(to.clone(), balance + value);
-    })
-    .ok_or(Error::<T>::ExtraError)
+    let prev_bal = <LpBalances<T>>::get(to).unwrap_or(T::Balance::zero());
+    <LpBalances<T>>::insert(to.clone(), prev_bal + value);
 }
 
 

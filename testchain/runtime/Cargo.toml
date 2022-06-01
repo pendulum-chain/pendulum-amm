@@ -57,6 +57,7 @@ orml-currencies = {git = "https://github.com/open-web3-stack/open-runtime-module
 orml-tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false }
 orml-traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false }
 
+pallet-pendulum-amm = { path = "../../pallet", default-features = false }
 
 [build-dependencies]
 substrate-wasm-builder =  {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "substrate-wasm-builder" }
@@ -98,6 +99,8 @@ std = [
 	"orml-tokens/std",
 	"orml-currencies/std",
 	"orml-traits/std",
+
+	"pallet-pendulum-amm/std"
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

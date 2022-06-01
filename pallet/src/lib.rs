@@ -19,32 +19,13 @@ use codec::{Codec, Encode, Decode, MaxEncodedLen};
 use sp_runtime::traits::{AtLeast32BitUnsigned, Zero};
 use sp_std::marker::PhantomData;
 
-pub type AssetCode = [u8; 12];
-pub type IssuerId = [u8; 32];
-
-#[derive(Debug, Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen,TypeInfo)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-pub struct Asset {
-    code: AssetCode,
-    issuer: IssuerId
-}
-
-impl Asset {
-    pub const fn new(code:AssetCode, issuer: IssuerId) -> Self {
-        Self {
-            code,
-            issuer
-        }
-    }
-}
-
 #[frame_support::pallet]
 pub mod pallet {
     use helper::*;
 
     use super::*;
 
-    use sp_std::{fmt::Debug, vec::Vec};
+    use sp_std::fmt::Debug;
     use frame_support::{ensure, pallet_prelude::*};
     use frame_system::{ensure_signed, pallet_prelude::*};
     use sp_runtime::traits::{IntegerSquareRoot, CheckedSub};
@@ -69,7 +50,16 @@ pub mod pallet {
         + TypeInfo
         + IntegerSquareRoot;
 
-        type AmmExtension: AmmExtension<Self::AccountId,Self::Balance, Self::Moment>;
+        /// The currency ID type
+        type CurrencyId: Parameter
+        + Member
+        + Copy
+        + MaybeSerializeDeserialize
+        + Ord
+        + TypeInfo
+        + MaxEncodedLen;
+
+        type AmmExtension: AmmExtension<Self::AccountId, Self::CurrencyId, Self::Balance, Self::Moment>;
 
         // type AddressConversion: StaticLookup<
         //     Source = <Self as frame_system::Config>::AccountId,
@@ -78,12 +68,6 @@ pub mod pallet {
 
         #[pallet::constant]
         type MinimumLiquidity: Get<Self::Balance>;
-        
-        #[pallet::constant]
-        type Asset0: Get<Asset>;
-        
-        #[pallet::constant]
-        type Asset1: Get<Asset>;
 
         // a multiplier for the denominator in _mint_fee
         // expected value is 5
@@ -114,7 +98,9 @@ pub mod pallet {
     pub struct GenesisConfig<T: Config> {
         pub contract_id: Option<T::AccountId>,
         pub zero_account: Option<T::AccountId>,
-        pub fee_to_setter: Option<T::AccountId>
+        pub fee_to_setter: Option<T::AccountId>,
+        pub asset_0: Option<T::CurrencyId>,
+        pub asset_1: Option<T::CurrencyId>
     }
 
     #[cfg(feature = "std")]
@@ -123,7 +109,9 @@ pub mod pallet {
             Self {
                 contract_id: None,
                 zero_account: None,
-                fee_to_setter: None
+                fee_to_setter: None,
+                asset_0: None,
+                asset_1: None
             }
         }
     }
@@ -143,28 +131,19 @@ pub mod pallet {
                 <FeeToSetter<T>>::put(fee_to_setter.clone());
             }
 
+            if let Some(asset) = &self.asset_0 {
+                <Asset0<T>>::put(asset.clone());
+            }
+
+            if let Some(asset) = &self.asset_1 {
+                <Asset1<T>>::put(asset.clone());
+            }
         }
     }
     
     #[pallet::pallet]
     #[pallet::generate_store(pub(super) trait Store)]
     pub struct Pallet<T>(_);
-
-    pub fn asset_1<T: Config>() -> Vec<u8> {
-        T::Asset0::get().code.to_vec()
-    }
-
-    pub fn asset_2<T: Config>() -> Vec<u8> {
-        T::Asset1::get().code.to_vec()
-    }
-
-    pub fn issuer_1<T: Config>() -> Vec<u8> {
-        T::Asset0::get().issuer.to_vec()
-    }
-
-    pub fn issuer_2<T: Config>() -> Vec<u8> {
-        T::Asset1::get().issuer.to_vec()
-    }
 
     #[pallet::storage]
     #[pallet::getter(fn lp_balances)]
@@ -228,6 +207,15 @@ pub mod pallet {
     }
 
     #[pallet::storage]
+    #[pallet::getter(fn asset_0)]
+    pub(super) type Asset0<T:Config> = StorageValue<_,T::CurrencyId,OptionQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn asset_1)]
+    pub(super) type Asset1<T:Config> = StorageValue<_,T::CurrencyId,OptionQuery>;
+
+
+    #[pallet::storage]
     #[pallet::getter(fn fee_to)]
     pub type FeeTo<T: Config> = StorageValue<_,T::AccountId,OptionQuery>;
 
@@ -240,8 +228,6 @@ pub mod pallet {
 
     #[pallet::storage]
     pub(super) type AddressZero<T: Config> = StorageValue<_,T::AccountId,OptionQuery>;
-
-
 
     // Pallets use events to inform users when important changes are made.
     // https://docs.substrate.io/v3/runtime/events-and-errors
@@ -334,16 +320,19 @@ pub mod pallet {
             let contract = <ContractId<T>>::get().unwrap();
             let reserves = <Reserves<T>>::get();
 
-            let amount_0_calc = balance_of::<T>(&contract, T::Asset0::get())
+            let asset_0 = <Asset0<T>>::get().unwrap();
+            let asset_1 = <Asset1<T>>::get().unwrap();
+
+            let amount_0_calc = balance_of::<T>(&contract, asset_0.clone())
                 .checked_sub(&reserves.reserve_0);
             if let Some(amount_0) = amount_0_calc {
-                transfer_tokens::<T>(&contract,&to,T::Asset0::get(), amount_0)?;
+                transfer_tokens::<T>(&contract,&to,asset_0, amount_0)?;
             }
 
-            let amount_1_calc = balance_of::<T>(&contract, T::Asset1::get())
+            let amount_1_calc = balance_of::<T>(&contract, asset_1.clone())
                 .checked_sub(&reserves.reserve_1);
             if let Some(amount_1) = amount_1_calc {
-                transfer_tokens::<T>(&contract, &to,T::Asset1::get(),amount_1)?;
+                transfer_tokens::<T>(&contract, &to,asset_1,amount_1)?;
             }
 
             Ok(())
@@ -355,8 +344,11 @@ pub mod pallet {
             let contract = <ContractId<T>>::get().unwrap();
             let reserves = <Reserves<T>>::get();
 
-            let balance_0 = balance_of::<T>(&contract, T::Asset0::get());
-            let balance_1 = balance_of::<T>(&contract, T::Asset1::get());
+            let asset_0 = <Asset0<T>>::get().unwrap();
+            let asset_1 = <Asset1<T>>::get().unwrap();
+
+            let balance_0 = balance_of::<T>(&contract, asset_0);
+            let balance_1 = balance_of::<T>(&contract, asset_1);
 
             _update::<T>(balance_0, balance_1, reserves.reserve_0, reserves.reserve_1);
 
@@ -369,10 +361,13 @@ pub mod pallet {
             let contract = <ContractId<T>>::get().unwrap();
             let reserves = <Reserves<T>>::get();
 
+            let asset_0 = <Asset0<T>>::get().unwrap();
+            let asset_1 = <Asset1<T>>::get().unwrap();
+
             let amount_1 = quote::<T>(amount, reserves.reserve_0, reserves.reserve_1)?;
 
-            transfer_tokens::<T>(&caller,&contract, T::Asset0::get(), amount)?;
-            transfer_tokens::<T>(&caller,&contract, T::Asset1::get(), amount_1)?;
+            transfer_tokens::<T>(&caller,&contract, asset_0, amount)?;
+            transfer_tokens::<T>(&caller,&contract, asset_1, amount_1)?;
 
 
             mint::<T>(&caller,caller.clone()).map_err(|e| DispatchError::from(e))
@@ -384,10 +379,13 @@ pub mod pallet {
             let contract = <ContractId<T>>::get().unwrap();
             let reserves = <Reserves<T>>::get();
 
+            let asset_0 = <Asset0<T>>::get().unwrap();
+            let asset_1 = <Asset1<T>>::get().unwrap();
+
             let amount_0 = quote::<T>(amount, reserves.reserve_1, reserves.reserve_0)?;
 
-            transfer_tokens::<T>(&caller,&contract, T::Asset0::get(), amount_0)?;
-            transfer_tokens::<T>(&caller,&contract, T::Asset1::get(), amount)?;
+            transfer_tokens::<T>(&caller,&contract, asset_0, amount_0)?;
+            transfer_tokens::<T>(&caller,&contract, asset_1, amount)?;
 
             mint::<T>(&caller,caller.clone()).map_err(|e| DispatchError::from(e))
         }
@@ -422,7 +420,9 @@ pub mod pallet {
                 reserves.reserve_1
             )?;
 
-            transfer_tokens::<T>(&caller,&contract, T::Asset0::get(), amount_0_in)?;
+            let asset_0 = <Asset0<T>>::get().unwrap();
+
+            transfer_tokens::<T>(&caller,&contract, asset_0, amount_0_in)?;
 
             _swap::<T>(amount_to_receive, T::Balance::zero(),&caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
@@ -441,33 +441,37 @@ pub mod pallet {
                 reserves.reserve_0
             )?;
 
-            transfer_tokens::<T>(&caller,&contract, T::Asset1::get(), amount_1_in)?;
+            let asset_1 = <Asset1<T>>::get().unwrap();
+
+            transfer_tokens::<T>(&caller,&contract, asset_1, amount_1_in)?;
 
             _swap::<T>( T::Balance::zero(), amount_to_receive, &caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
-
     }
 }
 
-pub trait AmmExtension<AccountId, Balance, Moment> {
-    fn fetch_balance(owner: &AccountId, asset: Asset) -> Balance;
-    fn transfer_balance(from: &AccountId, to: &AccountId, asset: Asset, amount: Balance);
+pub trait AmmExtension<AccountId, CurrencyId, Balance, Moment> {
+    fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance;
+    fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance);
 
-    fn moment_to_balance_type(moment:Moment) -> Balance;
+    fn moment_to_balance_type(moment: Moment) -> Balance;
 }
 
-pub struct AmmExtendedEmpty<AccountId,Balance, Moment>(PhantomData<(AccountId, Balance, Moment)>);
+pub struct AmmExtendedEmpty<T>(PhantomData<T>);
 
-impl <AccountId, Balance, Moment> AmmExtension<AccountId,Balance, Moment> for AmmExtendedEmpty<AccountId, Balance, Moment>
-    where Balance: Zero {
 
-    fn fetch_balance(_owner: &AccountId, _asset: Asset) -> Balance {
-        Balance::zero()
+impl <T: Config> AmmExtension<T::AccountId, T::CurrencyId, T::Balance, T::Moment> for AmmExtendedEmpty<T> {
+    fn fetch_balance(owner: &T::AccountId, asset: T::CurrencyId) -> T::Balance {
+        T::Balance::zero()
     }
 
-    fn transfer_balance(_from: &AccountId, _to: &AccountId,_asset: Asset, _amount: Balance) {
+    fn transfer_balance(from: &T::AccountId, to: &T::AccountId, asset: T::CurrencyId, amount: T::Balance) {
+        todo!()
     }
 
-    fn moment_to_balance_type(_moment: Moment) -> Balance { Balance::zero() }
+    fn moment_to_balance_type(moment: T::Moment) -> T::Balance {
+        T::Balance::zero()
+    }
+
 }

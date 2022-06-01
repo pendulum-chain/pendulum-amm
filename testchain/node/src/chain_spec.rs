@@ -1,5 +1,5 @@
 use test_node_runtime::{
-	AccountId, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig,
+	AccountId, AmmConfig, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig,
 	TokensConfig, WASM_BINARY,
 };
 use sc_service::ChainType;
@@ -174,5 +174,13 @@ fn testnet_genesis(
 				})
 				.collect(),
 		},
+
+		amm: AmmConfig {
+			contract_id: Some(get_account_id_from_seed::<sr25519::Public>("Contract")),
+			zero_account: Some(get_account_id_from_seed::<sr25519::Public>("Zero")),
+			fee_to_setter: Some(get_account_id_from_seed::<sr25519::Public>("Alice")),
+			asset_0: Some(stellar_usdc_asset),
+			asset_1: Some(stellar_eur_asset)
+		}
 	}
 }
