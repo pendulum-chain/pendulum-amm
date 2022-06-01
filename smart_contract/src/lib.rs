@@ -281,6 +281,7 @@ pub mod amm {
 	#[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
 	#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 	pub enum Error {
+		Forbidden,
 		/// Returned if not enough balance to fulfill a request is available.
 		InsufficientBalance,
 		/// Returned if not enough allowance to fulfill a request is available.
@@ -507,6 +508,16 @@ pub mod amm {
 		}
 
 		#[ink(message)]
+		pub fn set_fee_to(&mut self, fee_to: AccountId) -> Result<()> {
+			let caller = self.env().caller();
+			if !(caller == self.fee_to_setter) {
+				return Err(Error::Forbidden)
+			}
+			self.fee_to = Some(fee_to);
+			Ok(())
+		}
+
+		#[ink(message)]
 		/// Force balances to match reserves
 		pub fn skim(&mut self, to: AccountId) -> Result<()> {
 			let contract = self.env().account_id();
@@ -647,7 +658,6 @@ pub mod amm {
 			let amount_0 = liquidity.saturating_mul(balance_0).saturating_div(total_supply);
 			let amount_1 = liquidity.saturating_mul(balance_1).saturating_div(total_supply);
 
-			ink_env::debug_println!("amount_0: {}, amount_1: {}", amount_0, amount_1);
 			if !(amount_0 > 0 && amount_1 > 0) {
 				return Err(Error::InsufficientLiquidityBurned)
 			}
@@ -1273,6 +1283,7 @@ pub mod amm {
 
 			let result = pair.withdraw(gained_lp);
 			let (amount_0, amount_1) = result.expect("Could not unwrap result");
+			debug_println!("BALANCES: {:?}", BALANCES.lock().unwrap());
 			assert_eq!(
 				amount_0, deposit_amount,
 				"Expected withdrawn amount to be equal to deposited amount"
