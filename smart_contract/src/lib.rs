@@ -651,7 +651,7 @@ pub mod amm {
 			let asset_1 = self.asset_1;
 			let balance_0 = self.balance_of(contract, asset_0);
 			let balance_1 = self.balance_of(contract, asset_1);
-			let liquidity = self.lp_balance_of(to);
+			let liquidity = self.lp_balance_of(contract);
 
 			let fee_on = self._mint_fee(reserve_0, reserve_1)?;
 			let total_supply = self.total_supply;
@@ -865,7 +865,7 @@ pub mod amm {
 		fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
 			self.total_supply += value;
 			let balance = self.lp_balance_of(to);
-			self.lp_balances.insert(to, &(balance + value));
+			self.lp_balances.insert(to, &(balance.saturating_add(value)));
 			self.env().emit_event(Transfer { from: None, to: Some(to), value });
 			Ok(())
 		}
@@ -873,7 +873,7 @@ pub mod amm {
 		fn _burn(&mut self, from: AccountId, value: Balance) -> Result<()> {
 			self.total_supply -= value;
 			let balance = self.lp_balance_of(from);
-			self.lp_balances.insert(from, &(balance - value));
+			self.lp_balances.insert(from, &(balance.saturating_sub(value)));
 			self.env().emit_event(Transfer { from: Some(from), to: None, value });
 			Ok(())
 		}
@@ -888,8 +888,8 @@ pub mod amm {
 			if balance < amount {
 				return Err(Error::InsufficientBalance)
 			}
-			self.lp_balances.insert(from, &(balance - amount));
-			self.lp_balances.insert(to, &(self.lp_balance_of(to) + amount));
+			self.lp_balances.insert(from, &(balance.saturating_sub(amount)));
+			self.lp_balances.insert(to, &(self.lp_balance_of(to).saturating_add(amount)));
 			self.env()
 				.emit_event(Transfer { from: Some(from), to: Some(to), value: amount });
 			Ok(())
@@ -1268,7 +1268,7 @@ pub mod amm {
 			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
 
 			let mut pair = get_default_pair();
-			let initial_supply = 1_000_000;
+			let initial_supply = 10_000_000;
 			add_supply_for_account(to, initial_supply, &pair);
 
 			let deposit_amount = 500_000;
@@ -1278,12 +1278,10 @@ pub mod amm {
 			// do second deposit
 			let result = pair.deposit_asset_1(deposit_amount);
 			let gained_lp = result.expect("Could not unwrap gained lp");
-
 			assert_eq!(gained_lp > 0, true, "Expected received amount of LP to be greater than 0");
 
 			let result = pair.withdraw(gained_lp);
 			let (amount_0, amount_1) = result.expect("Could not unwrap result");
-			debug_println!("BALANCES: {:?}", BALANCES.lock().unwrap());
 			assert_eq!(
 				amount_0, deposit_amount,
 				"Expected withdrawn amount to be equal to deposited amount"
