@@ -1151,55 +1151,26 @@ pub mod amm {
             assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
             let swap_amount = 100;
-            let rate: f64 =
-                pair.reserve_0 as f64 / ((pair.reserve_1 as f64) - (swap_amount as f64));
-            println!("Expected float conversion rate: {}", rate);
             let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
-            let user_balance_1_pre_swap = pair.balance_of(to, pair.asset_1);
-            println!(
-                "Balances pre swap: {}, {}",
-                user_balance_0_pre_swap, user_balance_1_pre_swap
-            );
 
             let result = pair.swap_asset_2_for_asset_1(swap_amount);
             result.expect("Encountered error in swap");
+
             let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
-            let user_balance_1_post_swap = pair.balance_of(to, pair.asset_1);
             assert_eq!(
                 user_balance_0_post_swap,
                 user_balance_0_pre_swap + swap_amount
             );
-            assert_eq!(
-                user_balance_1_post_swap,
-                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
-            );
 
-            let rate: f64 =
-                pair.reserve_1 as f64 / ((pair.reserve_0 as f64) - (swap_amount as f64));
-            println!("Expected exact float conversion rate: {}", rate);
-            let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
             let user_balance_1_pre_swap = pair.balance_of(to, pair.asset_1);
-            println!(
-                "Balances pre swap: {}, {}",
-                user_balance_0_pre_swap, user_balance_1_pre_swap
-            );
 
             let result = pair.swap_asset_1_for_asset_2(swap_amount);
             result.expect("Encountered error in swap");
 
-            let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
             let user_balance_1_post_swap = pair.balance_of(to, pair.asset_1);
-            println!(
-                "Balances post swap: {}, {}",
-                user_balance_0_post_swap, user_balance_1_post_swap
-            );
             assert_eq!(
                 user_balance_1_post_swap,
                 user_balance_1_pre_swap + swap_amount
-            );
-            assert_eq!(
-                user_balance_0_post_swap,
-                ((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
             );
         }
 
@@ -1222,53 +1193,25 @@ pub mod amm {
             assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
             let swap_amount = 200_000;
-            let rate: f64 =
-                pair.reserve_0 as f64 / ((pair.reserve_1 as f64) - (swap_amount as f64));
-            println!("Expected float conversion rate: {}", rate);
             let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
-            let user_balance_1_pre_swap = pair.balance_of(to, pair.asset_1);
-            println!(
-                "Balances pre swap: {}, {}",
-                user_balance_0_pre_swap, user_balance_1_pre_swap
-            );
 
             let result = pair.swap_asset_2_for_asset_1(swap_amount);
             result.expect("Encountered error in swap");
+
             let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
-            let user_balance_1_post_swap = pair.balance_of(to, pair.asset_1);
             assert_eq!(
                 user_balance_0_post_swap,
                 user_balance_0_pre_swap + swap_amount
             );
-            println!(
-                "Expected without round {}",
-                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate)
-            );
-            assert_eq!(
-                user_balance_1_post_swap,
-                ((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
-            );
-
-            let rate: f64 =
-                pair.reserve_1 as f64 / ((pair.reserve_0 as f64) - (swap_amount as f64));
-            println!("Expected exact float conversion rate: {}", rate);
-            let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
             let user_balance_1_pre_swap = pair.balance_of(to, pair.asset_1);
-            println!(
-                "Balances pre swap: {}, {}",
-                user_balance_0_pre_swap, user_balance_1_pre_swap
-            );
+
             let result = pair.swap_asset_1_for_asset_2(swap_amount);
             result.expect("Encountered error in swap");
-            let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
+
             let user_balance_1_post_swap = pair.balance_of(to, pair.asset_1);
             assert_eq!(
                 user_balance_1_post_swap,
                 user_balance_1_pre_swap + swap_amount
-            );
-            assert_eq!(
-                user_balance_0_post_swap,
-                ((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
             );
         }
     }
