@@ -397,7 +397,7 @@ pub mod pallet {
             transfer_tokens::<T>(&caller,&contract, asset_1, amount_1)?;
 
 
-            mint::<T>(&caller,caller.clone()).map_err(|e| DispatchError::from(e))
+            mint::<T>(&caller,caller.clone())
         }
 
         #[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
@@ -414,7 +414,7 @@ pub mod pallet {
             transfer_tokens::<T>(&caller,&contract, asset_0, amount_0)?;
             transfer_tokens::<T>(&caller,&contract, asset_1, amount)?;
 
-            mint::<T>(&caller,caller.clone()).map_err(|e| DispatchError::from(e))
+            mint::<T>(&caller,caller.clone())
         }
 
         /// Remove Liquidity
@@ -451,7 +451,7 @@ pub mod pallet {
 
             transfer_tokens::<T>(&caller,&contract, asset_0, amount_0_in)?;
 
-            _swap::<T>(amount_to_receive, T::Balance::zero(),&caller,caller.clone())
+            _swap::<T>( T::Balance::zero(),amount_to_receive, &caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
 
@@ -468,11 +468,12 @@ pub mod pallet {
                 reserves.reserve_0
             )?;
 
+
             let asset_1 = <Asset1<T>>::get().unwrap();
 
             transfer_tokens::<T>(&caller,&contract, asset_1, amount_1_in)?;
 
-            _swap::<T>( T::Balance::zero(), amount_to_receive, &caller,caller.clone())
+            _swap::<T>(  amount_to_receive, T::Balance::zero(), &caller,caller.clone())
                 .map_err(|e| DispatchError::from(e))
         }
     }

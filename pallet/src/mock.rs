@@ -10,11 +10,11 @@ use crate as amm;
 use sp_runtime::app_crypto::sp_core;
 use amm::{pallet::Config, AmmExtension};
 
-type UncheckedExtrinsic = system::mocking::MockUncheckedExtrinsic<Test>;
-type Block = system::mocking::MockBlock<Test>;
-type AccountId = u64;
-type Balance = u128;
-type Moment = u64;
+pub type UncheckedExtrinsic = system::mocking::MockUncheckedExtrinsic<Test>;
+pub type Block = system::mocking::MockBlock<Test>;
+pub type AccountId = u64;
+pub type Balance = u128;
+pub type Moment = u64;
 
 
 pub type AssetCode = [u8; 12];
@@ -38,12 +38,12 @@ const ISSUER: [u8; 32] = [
     171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
 ];
 
-const ASSET_0: Asset = Asset{
+pub const ASSET_0: Asset = Asset{
     code: EUR,
     issuer: ISSUER
 };
 
-const ASSET_1: Asset = Asset{
+pub const ASSET_1: Asset = Asset{
     code: USDC,
     issuer: ISSUER
 };
@@ -120,22 +120,22 @@ thread_local! {
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    ASSETSMAP0.with(|assets|{
-        let mut assets_map = assets.borrow_mut();
-        assets_map.insert(1,1000);
-        assets_map.insert(2, 200);
-        assets_map.insert(3, 300);
-        assets_map.insert(4, 400);
-    });
-
-    ASSETSMAP1.with(|assets|{
-        let mut assets_map = assets.borrow_mut();
-        assets_map.insert(1,900);
-        assets_map.insert(2, 201);
-        assets_map.insert(5, 500);
-        assets_map.insert(6, 600);
-        assets_map.insert(7, 700);
-    });
+    // ASSETSMAP0.with(|assets|{
+    //     let mut assets_map = assets.borrow_mut();
+    //     assets_map.insert(1,1000);
+    //     assets_map.insert(2, 200);
+    //     assets_map.insert(3, 300);
+    //     assets_map.insert(4, 400);
+    // });
+    //
+    // ASSETSMAP1.with(|assets|{
+    //     let mut assets_map = assets.borrow_mut();
+    //     assets_map.insert(1,900);
+    //     assets_map.insert(2, 201);
+    //     assets_map.insert(5, 500);
+    //     assets_map.insert(6, 600);
+    //     assets_map.insert(7, 700);
+    // });
 
     let mut system_cfg = system::GenesisConfig::default().build_storage::<Test>().unwrap();
 
@@ -176,10 +176,13 @@ impl AmmExtension<AccountId,Asset,Balance,Moment> for Extension {
                 let mut asset_map = assets.borrow_mut();
 
                 if let Some(bal) = asset_map.get(from) {
-                    let new_bal = bal.checked_sub(amount).unwrap_or(0u128);
+                    let from_bal = bal.checked_sub(amount).unwrap_or(0u128);
 
-                    asset_map.insert(to.clone(),amount);
-                    asset_map.insert(from.clone(),new_bal);
+                    let to_bal = asset_map.get(to).unwrap_or(&0u128);
+                    let to_bal = to_bal.checked_add(amount).unwrap_or(*to_bal);
+
+                    asset_map.insert(to.clone(),to_bal);
+                    asset_map.insert(from.clone(),from_bal);
                 }
             })
         } else {
@@ -189,7 +192,10 @@ impl AmmExtension<AccountId,Asset,Balance,Moment> for Extension {
                 if let Some(bal) = asset_map.get(from) {
                     let new_bal = bal.checked_sub(amount).unwrap_or(0u128);
 
-                    asset_map.insert(to.clone(),amount);
+                    let to_bal = asset_map.get(to).unwrap_or(&0u128);
+                    let to_bal = to_bal.checked_add(amount).unwrap_or(*to_bal);
+
+                    asset_map.insert(to.clone(),to_bal);
                     asset_map.insert(from.clone(),new_bal);
                 }
             })

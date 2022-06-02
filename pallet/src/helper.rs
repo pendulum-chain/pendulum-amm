@@ -12,7 +12,7 @@ use sp_std::cmp;
 
 type FuncResult<T> = Result<(),Error<T>>;
 
-pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T> {
+pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
     let zero = T::Balance::zero();
 
     let contract = <ContractId<T>>::get().unwrap();
@@ -54,9 +54,10 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
         res
     };
 
-    if liquidity <= zero {
-        return Err(Error::<T>::InsufficientLiquidityMinted)
-    }
+    ensure!(
+        liquidity > zero,
+        Error::<T>::InsufficientLiquidityMinted
+    );
 
     _mint::<T>(to,liquidity);
     _update::<T>(balance_0, balance_1, reserve_0, reserve_1);
@@ -71,7 +72,6 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
         amount_1
     });
 
-    //Ok(liquidity)
     Ok(())
 }
 
@@ -88,7 +88,7 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
     let balance_0 = balance_of::<T>(&contract,asset_0.clone());
     let balance_1 = balance_of::<T>(&contract, asset_1.clone());
 
-    let liquidity = <LpBalances<T>>::get(to).unwrap();
+    let liquidity = <LpBalances<T>>::get(&contract).unwrap();
 
     let fee_on = _mint_fee::<T>(reserve_0, reserve_1)?;
     let total_supply = <TotalSupply<T>>::get();
@@ -104,7 +104,7 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
     };
 
     ensure!(
-        amount_0 <= zero && amount_1 <= zero,
+        amount_0 > zero && amount_1 > zero,
         Error::<T>::InsufficientLiquidityBurned
     );
 
@@ -144,7 +144,7 @@ pub fn _swap<T: Config>(
     let asset_1 = <Asset1<T>>::get().unwrap();
 
     ensure!(
-        amount_0_out > zero && amount_1_out > zero,
+        amount_0_out > zero || amount_1_out > zero,
         Error::<T>::InsufficientOutputAmount
     );
     let (reserve_0, reserve_1, _) = reserves::<T>();
@@ -178,7 +178,7 @@ pub fn _swap<T: Config>(
     } else { zero };
 
     ensure!{
-        amount_0_in > zero && amount_1_in > zero,
+        amount_0_in > zero || amount_1_in > zero,
         Error::<T>::InsufficientInputAmount
     }
 
@@ -196,7 +196,7 @@ pub fn _swap<T: Config>(
         .saturating_mul(multiplier_1000 * multiplier_1000);
 
     ensure!(
-        balance <= reserve,
+        balance >= reserve,
         Error::<T>::InvalidK
     );
 
@@ -226,6 +226,7 @@ pub fn transfer_tokens<T: Config>(
     amount: T::Balance
 ) -> DispatchResult {
     let from_balance = balance_of::<T>(from,asset.clone());
+
     ensure!(
         from_balance >= amount,
         Error::<T>::InsufficientBalance
@@ -277,6 +278,8 @@ pub fn _update<T: Config >(
     let reserve = BalanceReserves::new(balance_0, balance_1, block_timestamp);
     <Reserves<T>>::put(reserve);
 
+
+    let (one,two,_) = reserves::<T>();
     <Pallet<T>>::deposit_event(Event::<T>::Sync { reserve_0, reserve_1 });
 }
 
@@ -348,7 +351,6 @@ fn _burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T> {
     Ok(())
 }
 
-
 pub fn _transfer_liquidity<T: Config>(
     from: T::AccountId,
     to: T::AccountId,
@@ -360,10 +362,10 @@ pub fn _transfer_liquidity<T: Config>(
     if from_balance < amount {
             return Err(Error::<T>::InsufficientBalance)
     }
-    <LpBalances<T>>::insert(from.clone(), from_balance - amount);
+    <LpBalances<T>>::insert(from.clone(), from_balance.saturating_sub(amount));
 
     let to_balance = <LpBalances<T>>::get(&to).unwrap_or(zero);
-    <LpBalances<T>>::insert(to.clone(),  to_balance + amount);
+    <LpBalances<T>>::insert(to.clone(),  to_balance.saturating_add(amount));
 
     <Pallet<T>>::deposit_event(Event::<T>::Transfer {
         from: Some(from),
@@ -373,7 +375,6 @@ pub fn _transfer_liquidity<T: Config>(
 
     Ok(())
 }
-
 
 pub fn get_amount_out<T: Config>(
     amount_in: T::Balance,
@@ -397,7 +398,6 @@ pub fn get_amount_out<T: Config>(
 
     numerator.checked_div(&denominator).ok_or(Error::<T>::Forbidden)
 }
-
 
 pub fn get_amount_in<T: Config>(
     amount_out: T::Balance,
