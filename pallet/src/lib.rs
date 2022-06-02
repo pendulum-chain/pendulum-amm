@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use scale_info::TypeInfo;
 use codec::{Codec, Encode, Decode, MaxEncodedLen};
+use frame_support::dispatch::DispatchResult;
 
 use sp_runtime::traits::{AtLeast32BitUnsigned, Zero};
 use sp_std::marker::PhantomData;
@@ -146,28 +147,12 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::storage]
-    #[pallet::getter(fn lp_balances)]
-    pub type LpBalances<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId,T::Balance, OptionQuery>;
+    #[pallet::getter(fn asset_0)]
+    pub(super) type Asset0<T:Config> = StorageValue<_,T::CurrencyId,OptionQuery>;
 
     #[pallet::storage]
-    #[pallet::getter(fn total_supply)]
-    pub type TotalSupply<T: Config> = StorageValue<_,T::Balance,ValueQuery>;
-
-
-    #[pallet::type_value]
-    pub(super) fn ZeroDefault<T: Config>() -> T::Balance { T::Balance::zero() }
-
-    #[pallet::storage]
-    #[pallet::getter(fn price_0_cumulative_last)]
-    pub(super) type Price0CumulativeLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn price_1_cumulative_last)]
-    pub(super) type Price1CumulativeLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn k_last)]
-    pub(super) type KLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
+    #[pallet::getter(fn asset_1)]
+    pub(super) type Asset1<T:Config> = StorageValue<_,T::CurrencyId,OptionQuery>;
 
     #[derive(Debug,Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen, TypeInfo)]
     #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
@@ -206,14 +191,20 @@ pub mod pallet {
         (res.reserve_0, res.reserve_1, res.block_timestamp_last)
     }
 
-    #[pallet::storage]
-    #[pallet::getter(fn asset_0)]
-    pub(super) type Asset0<T:Config> = StorageValue<_,T::CurrencyId,OptionQuery>;
+    #[pallet::type_value]
+    pub(super) fn ZeroDefault<T: Config>() -> T::Balance { T::Balance::zero() }
 
     #[pallet::storage]
-    #[pallet::getter(fn asset_1)]
-    pub(super) type Asset1<T:Config> = StorageValue<_,T::CurrencyId,OptionQuery>;
+    #[pallet::getter(fn price_0_cumulative_last)]
+    pub(super) type Price0CumulativeLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn price_1_cumulative_last)]
+    pub(super) type Price1CumulativeLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn k_last)]
+    pub(super) type KLast<T: Config> = StorageValue<_,T::Balance,ValueQuery,ZeroDefault<T>>;
 
     #[pallet::storage]
     #[pallet::getter(fn fee_to)]
@@ -222,6 +213,17 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn fee_to_setter)]
     pub type FeeToSetter<T: Config> = StorageValue<_,T::AccountId,OptionQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn total_supply)]
+    pub type TotalSupply<T: Config> = StorageValue<_,T::Balance,ValueQuery>;
+
+
+    #[pallet::storage]
+    #[pallet::getter(fn lp_balances)]
+    pub type LpBalances<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId,T::Balance, OptionQuery>;
+
+
 
     #[pallet::storage]
     pub(super) type ContractId<T: Config> = StorageValue<_,T::AccountId,OptionQuery>;
@@ -275,7 +277,7 @@ pub mod pallet {
     #[pallet::error]
     pub enum Error<T> {
 
-        ExtraError,
+        Forbidden,
         /// Returned if not enough balance to fulfill a request is available.
         InsufficientBalance,
         /// Returned if not enough allowance to fulfill a request is available.
@@ -313,7 +315,24 @@ pub mod pallet {
     #[pallet::call]
     impl<T: Config> Pallet<T> {
 
+        #[pallet::weight(10_000 + T::DbWeight::get().reads_writes(1,1))]
+        pub fn set_fee_to(origin: OriginFor<T>, fee_to: T::AccountId) -> DispatchResult {
+            let caller = ensure_signed(origin)?;
+
+            ensure!(
+                caller == <FeeToSetter<T>>::get().unwrap(), // the read
+                Error::<T>::Forbidden
+            );
+
+            <FeeTo<T>>::put(fee_to); //the write
+
+            Ok(())
+        }
+
+
         /// Force balances to match reserves
+        /// At this point, the caller is the recepient.
+        /// todo: weight
         #[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
         pub fn skim(origin: OriginFor<T>) -> DispatchResult {
             let to = ensure_signed(origin)?;
@@ -323,13 +342,13 @@ pub mod pallet {
             let asset_0 = <Asset0<T>>::get().unwrap();
             let asset_1 = <Asset1<T>>::get().unwrap();
 
-            let amount_0_calc = balance_of::<T>(&contract, asset_0.clone())
+            let amount_0_calc = balance_of::<T>(&contract, asset_0)
                 .checked_sub(&reserves.reserve_0);
             if let Some(amount_0) = amount_0_calc {
                 transfer_tokens::<T>(&contract,&to,asset_0, amount_0)?;
             }
 
-            let amount_1_calc = balance_of::<T>(&contract, asset_1.clone())
+            let amount_1_calc = balance_of::<T>(&contract, asset_1)
                 .checked_sub(&reserves.reserve_1);
             if let Some(amount_1) = amount_1_calc {
                 transfer_tokens::<T>(&contract, &to,asset_1,amount_1)?;
@@ -355,6 +374,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Add liquidity
         #[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
         pub fn deposit_asset_1(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
             let caller = ensure_signed(origin)?;
@@ -364,7 +384,14 @@ pub mod pallet {
             let asset_0 = <Asset0<T>>::get().unwrap();
             let asset_1 = <Asset1<T>>::get().unwrap();
 
-            let amount_1 = quote::<T>(amount, reserves.reserve_0, reserves.reserve_1)?;
+            let zero = T::Balance::zero();
+
+
+            let  amount_1 = if reserves.reserve_0 == zero && reserves.reserve_1 == zero {
+                amount
+            } else {
+               quote::<T>(amount, reserves.reserve_0, reserves.reserve_1)?
+            };
 
             transfer_tokens::<T>(&caller,&contract, asset_0, amount)?;
             transfer_tokens::<T>(&caller,&contract, asset_1, amount_1)?;
@@ -453,7 +480,7 @@ pub mod pallet {
 
 pub trait AmmExtension<AccountId, CurrencyId, Balance, Moment> {
     fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance;
-    fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance);
+    fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance) -> DispatchResult;
 
     fn moment_to_balance_type(moment: Moment) -> Balance;
 }
@@ -466,8 +493,8 @@ impl <T: Config> AmmExtension<T::AccountId, T::CurrencyId, T::Balance, T::Moment
         T::Balance::zero()
     }
 
-    fn transfer_balance(from: &T::AccountId, to: &T::AccountId, asset: T::CurrencyId, amount: T::Balance) {
-        todo!()
+    fn transfer_balance(from: &T::AccountId, to: &T::AccountId, asset: T::CurrencyId, amount: T::Balance) -> DispatchResult {
+        Ok(())
     }
 
     fn moment_to_balance_type(moment: T::Moment) -> T::Balance {

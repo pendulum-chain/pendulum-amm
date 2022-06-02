@@ -6,6 +6,7 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{traits::OnRuntimeUpgrade, weights::DispatchClass};
 use frame_system::limits::{BlockLength, BlockWeights};
@@ -270,22 +271,6 @@ impl pallet_pendulum_amm::Config for Runtime {
 }
 
 
-pub struct Extension;
-
-impl AmmExtension<AccountId, CurrencyId, Balance, u64> for Extension {
-	fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance {
-		todo!()
-	}
-
-	fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance) {
-		todo!()
-	}
-
-	fn moment_to_balance_type(moment: u64) -> Balance {
-		todo!()
-	}
-}
-
 
 parameter_types! {
 	pub const ExistentialDeposit: u128 = EXISTENTIAL_DEPOSIT;
@@ -455,6 +440,22 @@ parameter_types! {
 }
 
 //--------------------- Chain Extension --------------------------
+pub struct Extension;
+
+impl AmmExtension<AccountId, CurrencyId, Balance, u64> for Extension {
+	fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance {
+		<Tokens as MultiCurrency<AccountId>>::total_balance(asset,owner)
+	}
+
+	fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance) -> sp_runtime::DispatchResult {
+		<Currencies as MultiCurrency<AccountId>>::transfer(asset, from, to, amount)
+	}
+
+	fn moment_to_balance_type(moment: u64) -> Balance {
+		Balance::from(moment)
+	}
+}
+
 pub struct BalanceChainExtension;
 use sp_runtime::DispatchError;
 

@@ -1,8 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use frame_support::ensure;
 use crate::{AmmExtension, Asset0, Asset1};
 use crate::pallet::{Config, Error, Event, Pallet, BalanceReserves, Price0CumulativeLast, Price1CumulativeLast, reserves, Reserves, KLast, TotalSupply, FeeTo, LpBalances, ContractId, AddressZero};
 use frame_support::traits::Get;
+use sp_runtime::DispatchResult;
 
 use sp_runtime::traits::{Bounded, CheckedAdd, CheckedDiv,CheckedSub, IntegerSquareRoot, Saturating, Zero, One};
 
@@ -74,7 +76,7 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> FuncResult<T>
 }
 
 pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
-    -> FuncResult<T> {
+    -> DispatchResult {
     let zero = T::Balance::zero();
 
     let contract = <ContractId<T>>::get().unwrap();
@@ -101,9 +103,10 @@ pub fn burn<T: Config>(to: &T::AccountId,caller: T::AccountId)
         to_div.checked_div(&total_supply).unwrap_or(zero)
     };
 
-    if !(amount_0 > zero || amount_1 > zero) {
-        return Err(Error::<T>::InsufficientLiquidityBurned)
-    }
+    ensure!(
+        amount_0 <= zero && amount_1 <= zero,
+        Error::<T>::InsufficientLiquidityBurned
+    );
 
     _burn::<T>(&contract,liquidity)?;
 
@@ -135,20 +138,22 @@ pub fn _swap<T: Config>(
     amount_1_out: T::Balance,
     to: &T::AccountId,
     sender: T::AccountId
-) -> FuncResult<T> {
+) -> DispatchResult {
     let zero = T::Balance::zero();
     let asset_0 = <Asset0<T>>::get().unwrap();
     let asset_1 = <Asset1<T>>::get().unwrap();
 
-    if amount_0_out <= zero || amount_1_out <= zero {
-        return Err(Error::<T>::InsufficientOutputAmount)
-    }
-
+    ensure!(
+        amount_0_out > zero && amount_1_out > zero,
+        Error::<T>::InsufficientOutputAmount
+    );
     let (reserve_0, reserve_1, _) = reserves::<T>();
 
-    if amount_0_out >= reserve_0 || amount_1_out >= reserve_1 {
-        return Err(Error::<T>::InsufficientLiquidity)
-    }
+
+    ensure!(
+        amount_0_out < reserve_0 && amount_1_out < reserve_1,
+        Error::<T>::InsufficientLiquidity
+    );
 
     // optimistically transfe tokens
     let contract = <ContractId<T>>::get().unwrap();
@@ -172,9 +177,9 @@ pub fn _swap<T: Config>(
         balance_1.saturating_sub(reserve_1.saturating_sub(amount_1_out))
     } else { zero };
 
-
-    if amount_0_in <= zero || amount_1_in <= zero {
-        return Err(Error::<T>::InsufficientInputAmount)
+    ensure!{
+        amount_0_in > zero && amount_1_in > zero,
+        Error::<T>::InsufficientInputAmount
     }
 
     let multiplier_1000 = T::MulBalance::get();
@@ -190,9 +195,10 @@ pub fn _swap<T: Config>(
     let reserve =  reserve_0.saturating_mul(reserve_1)
         .saturating_mul(multiplier_1000 * multiplier_1000);
 
-    if balance > reserve {
-        return Err(Error::<T>::InvalidK)
-    }
+    ensure!(
+        balance <= reserve,
+        Error::<T>::InvalidK
+    );
 
     let balance_0 = balance_of::<T>(&contract, asset_0);
     let balance_1 = balance_of::<T>(&contract, asset_1);
@@ -218,18 +224,19 @@ pub fn transfer_tokens<T: Config>(
     to: &T::AccountId,
     asset: T::CurrencyId,
     amount: T::Balance
-) -> Result<(),Error<T>> {
+) -> DispatchResult {
     let from_balance = balance_of::<T>(from,asset.clone());
-    if from_balance < amount {
-        return Err(Error::<T>::InsufficientBalance)
-    }
+    ensure!(
+        from_balance >= amount,
+        Error::<T>::InsufficientBalance
+    );
 
-    T::AmmExtension::transfer_balance(from,to,asset,amount);
-
-    Ok(())
+    //todo: also don't know this weight
+    T::AmmExtension::transfer_balance(from,to,asset,amount)
 }
 
 pub fn balance_of<T: Config>(owner:&T::AccountId, asset: T::CurrencyId) -> T::Balance {
+    //todo: what's the weight of this function call?
     T::AmmExtension::fetch_balance(owner,asset)
 }
 
@@ -240,29 +247,30 @@ pub fn _update<T: Config >(
     reserve_1: T::Balance
 ) {
     let zero = T::Balance::zero();
-
     let (_,_,block_timestamp_last) = reserves::<T>();
 
-
     let block_timestamp: T::Moment = pallet_timestamp::Pallet::<T>::now();
+
     let time_elapsed = block_timestamp.checked_sub(&block_timestamp_last)
         .map(|timestamp| T::AmmExtension::moment_to_balance_type(timestamp))
         .unwrap_or(T::Balance::max_value()); // overflow is desired
 
+    let mutate = |price: &mut T::Balance, reserve_x: T::Balance, reserve_y: T::Balance, time_elapsed: T::Balance |  {
+        // * never overflows, and + overflow is desired
+        let to_add = reserve_x.checked_div(&reserve_y)
+            .unwrap_or(zero).saturating_mul(time_elapsed);
+
+        *price = price.clone().checked_add(&to_add).unwrap_or(zero);
+        // *price = price.clone().overflowing_add(to_add).0;
+    };
+
     if time_elapsed > zero && reserve_0 != zero && reserve_1 != zero {
         <Price0CumulativeLast<T>>::mutate(|price| {
-            let to_add = reserve_1.checked_div(&reserve_0)
-                .unwrap_or(zero).saturating_mul(time_elapsed);
-
-            *price = price.clone().checked_add(&to_add).unwrap_or(zero);
+            mutate(price, reserve_1, reserve_0, time_elapsed);
         });
 
         <Price1CumulativeLast<T>>::mutate(|price| {
-
-            let to_add = reserve_0.checked_div(&reserve_1)
-                .unwrap_or(zero).saturating_mul(time_elapsed);
-
-            *price = price.clone().checked_add(&to_add).unwrap_or(zero);
+            mutate(price, reserve_0,reserve_1, time_elapsed);
         });
     }
 
@@ -317,16 +325,27 @@ fn _mint<T: Config>(to: &T::AccountId, value: T::Balance) {
 
     let prev_bal = <LpBalances<T>>::get(to).unwrap_or(T::Balance::zero());
     <LpBalances<T>>::insert(to.clone(), prev_bal + value);
-}
 
+    <Pallet<T>>::deposit_event(Event::<T>::Transfer {
+        from: None,
+        to: Some(to.clone()),
+        value
+    })
+}
 
 fn _burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T> {
     <TotalSupply<T>>::mutate(|v| { *v -= value; });
 
-    <LpBalances<T>>::get(from).map(|balance| {
-        <LpBalances<T>>::insert(from.clone(), balance - value);
-    })
-    .ok_or(Error::<T>::ExtraError)
+    let prev_bal = <LpBalances<T>>::get(from).ok_or(Error::<T>::Forbidden)?;
+    <LpBalances<T>>::insert(from.clone(), prev_bal.saturating_sub(value));
+
+    <Pallet<T>>::deposit_event(Event::<T>::Transfer {
+        from: Some(from.clone()),
+        to: None,
+        value
+    });
+
+    Ok(())
 }
 
 
@@ -335,27 +354,24 @@ pub fn _transfer_liquidity<T: Config>(
     to: T::AccountId,
     amount: T::Balance
 ) -> FuncResult<T>  {
-    if let Some(from_balance) = <LpBalances<T>>::get(&from) {
-        if from_balance < amount {
+    let zero = T::Balance::zero();
+
+    let from_balance = <LpBalances<T>>::get(&from).unwrap_or(zero);
+    if from_balance < amount {
             return Err(Error::<T>::InsufficientBalance)
-        }
-
-        if let Some(to_balance) = <LpBalances<T>>::get(&to) {
-
-            <LpBalances<T>>::insert(from, from_balance - amount);
-            <LpBalances<T>>::insert(to,  to_balance + amount);
-
-            <Pallet<T>>::deposit_event(Event::<T>::Transfer {
-                from: None,
-                to: None,
-                value: amount
-            });
-
-            return Ok(());
-        }
     }
+    <LpBalances<T>>::insert(from.clone(), from_balance - amount);
 
-    Err(Error::<T>::ExtraError)
+    let to_balance = <LpBalances<T>>::get(&to).unwrap_or(zero);
+    <LpBalances<T>>::insert(to.clone(),  to_balance + amount);
+
+    <Pallet<T>>::deposit_event(Event::<T>::Transfer {
+        from: Some(from),
+        to: Some(to),
+        value: amount
+    });
+
+    Ok(())
 }
 
 
@@ -379,7 +395,7 @@ pub fn get_amount_out<T: Config>(
     let denominator = reserve_in.saturating_mul(T::MulBalance::get())
         .saturating_add(amount_in_with_fee);
 
-    numerator.checked_div(&denominator).ok_or(Error::<T>::ExtraError)
+    numerator.checked_div(&denominator).ok_or(Error::<T>::Forbidden)
 }
 
 
@@ -403,7 +419,7 @@ pub fn get_amount_in<T: Config>(
 
     numerator.checked_div(&denominator)
         .map(|res| res.saturating_add(T::Balance::one()))
-        .ok_or(Error::<T>::ExtraError)
+        .ok_or(Error::<T>::Forbidden)
 }
 
 pub fn quote<T: Config>(
@@ -422,5 +438,5 @@ pub fn quote<T: Config>(
     }
 
     let amount_b = amount_a.saturating_mul(reserve_b);
-    amount_b.checked_div(&reserve_a).ok_or(Error::<T>::ExtraError)
+    amount_b.checked_div(&reserve_a).ok_or(Error::<T>::Forbidden)
 }

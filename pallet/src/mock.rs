@@ -4,10 +4,7 @@ use frame_support::{parameter_types, sp_io};
 use frame_support::pallet_prelude::GenesisBuild;
 use frame_support::traits::{ConstU16, ConstU64, ConstU128};
 use frame_system as system;
-use sp_runtime::{
-    testing::Header,
-    traits::{BlakeTwo256, IdentityLookup},
-};
+use sp_runtime::{DispatchResult, testing::Header, traits::{BlakeTwo256, IdentityLookup}};
 
 use crate as amm;
 use sp_runtime::app_crypto::sp_core;
@@ -173,7 +170,7 @@ impl AmmExtension<AccountId,Asset,Balance,Moment> for Extension {
         }
     }
 
-    fn transfer_balance(from: &AccountId, to: &AccountId, asset: Asset, amount: Balance) {
+    fn transfer_balance(from: &AccountId, to: &AccountId, asset: Asset, amount: Balance) -> DispatchResult {
         if asset == ASSET_0 {
             ASSETSMAP0.with(|assets| {
                 let mut asset_map = assets.borrow_mut();
@@ -197,10 +194,11 @@ impl AmmExtension<AccountId,Asset,Balance,Moment> for Extension {
                 }
             })
         }
+        Ok(())
     }
 
     fn moment_to_balance_type(moment: Moment) -> Balance {
-        moment as Balance
+        Balance::from(moment)
     }
 }
 
