@@ -113,6 +113,11 @@ impl pallet_timestamp::Config for Test {
 	type WeightInfo = ();
 }
 
+parameter_types! {
+	pub Asset0: Asset = ASSET_0;
+	pub Asset1: Asset = ASSET_1;
+}
+
 impl Config for Test {
 	type Event = Event;
 	type Balance = Balance;
@@ -124,6 +129,8 @@ impl Config for Test {
 	type SubFee = ConstU128<997>;
 	type MulBalance = ConstU128<1000>;
 	type SwapMulBalance = ConstU128<3>;
+	type Asset0 = Asset0;
+	type Asset1 = Asset1;
 }
 
 thread_local! {
@@ -138,8 +145,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		contract_id: Some(1),
 		zero_account: Some(0),
 		fee_to_setter: Some(2),
-		asset_0: Some(ASSET_0),
-		asset_1: Some(ASSET_1),
 	}
 	.assimilate_storage(&mut system_cfg)
 	.unwrap();

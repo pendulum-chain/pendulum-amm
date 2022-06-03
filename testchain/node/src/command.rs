@@ -3,9 +3,9 @@ use crate::{
 	cli::{Cli, Subcommand},
 	service,
 };
-use test_node_runtime::Block;
 use sc_cli::{ChainSpec, RuntimeVersion, SubstrateCli};
 use sc_service::PartialComponents;
+use test_node_runtime::Block;
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {

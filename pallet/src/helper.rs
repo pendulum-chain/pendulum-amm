@@ -5,7 +5,7 @@ use crate::{
 		reserves, AddressZero, BalanceReserves, Config, ContractId, Error, Event, FeeTo, KLast,
 		LpBalances, Pallet, Price0CumulativeLast, Price1CumulativeLast, Reserves, TotalSupply,
 	},
-	AmmExtension, Asset0, Asset1,
+	AmmExtension,
 };
 use frame_support::{ensure, traits::Get};
 use sp_runtime::DispatchResult;
@@ -24,8 +24,8 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 	let contract = <ContractId<T>>::get().unwrap();
 	let (reserve_0, reserve_1, _) = reserves::<T>();
 
-	let asset_0 = <Asset0<T>>::get().unwrap();
-	let asset_1 = <Asset1<T>>::get().unwrap();
+	let asset_0 = T::Asset0::get();
+	let asset_1 = T::Asset1::get();
 
 	let balance_0 = balance_of::<T>(&contract, asset_0);
 	let balance_1 = balance_of::<T>(&contract, asset_1);
@@ -74,8 +74,8 @@ pub fn burn<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 	let contract = <ContractId<T>>::get().unwrap();
 	let (reserve_0, reserve_1, _) = reserves::<T>();
 
-	let asset_0 = <Asset0<T>>::get().unwrap();
-	let asset_1 = <Asset1<T>>::get().unwrap();
+	let asset_0 = T::Asset0::get();
+	let asset_1 = T::Asset1::get();
 
 	let balance_0 = balance_of::<T>(&contract, asset_0.clone());
 	let balance_1 = balance_of::<T>(&contract, asset_1.clone());
@@ -129,8 +129,8 @@ pub fn _swap<T: Config>(
 	sender: T::AccountId,
 ) -> DispatchResult {
 	let zero = T::Balance::zero();
-	let asset_0 = <Asset0<T>>::get().unwrap();
-	let asset_1 = <Asset1<T>>::get().unwrap();
+	let asset_0 = T::Asset0::get();
+	let asset_1 = T::Asset1::get();
 
 	ensure!(amount_0_out > zero || amount_1_out > zero, Error::<T>::InsufficientOutputAmount);
 	let (reserve_0, reserve_1, _) = reserves::<T>();
@@ -265,7 +265,6 @@ pub fn _update<T: Config>(
 	let reserve = BalanceReserves::new(balance_0, balance_1, block_timestamp);
 	<Reserves<T>>::put(reserve);
 
-	let (one, two, _) = reserves::<T>();
 	<Pallet<T>>::deposit_event(Event::<T>::Sync { reserve_0, reserve_1 });
 }
 
@@ -359,7 +358,7 @@ pub fn _transfer_liquidity<T: Config>(
 	Ok(())
 }
 
-pub fn get_amount_out<T: Config>(
+pub fn _get_amount_out<T: Config>(
 	amount_in: T::Balance,
 	reserve_in: T::Balance,
 	reserve_out: T::Balance,

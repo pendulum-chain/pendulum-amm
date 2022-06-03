@@ -6,7 +6,6 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{traits::OnRuntimeUpgrade, weights::DispatchClass};
 use frame_system::limits::{BlockLength, BlockWeights};
@@ -257,6 +256,26 @@ impl pallet_timestamp::Config for Runtime {
 	type WeightInfo = ();
 }
 
+parameter_types! {
+	pub StellarUsdcAsset: CurrencyId = CurrencyId::try_from((
+		"USDC",
+		[
+			20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16, 50, 30, 226, 102, 231, 46,
+			199, 108, 171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
+		],
+	))
+	.unwrap();
+
+	pub StellarEurAsset: CurrencyId = CurrencyId::try_from((
+		"EUR",
+		[
+			20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16, 50, 30, 226, 102, 231, 46,
+			199, 108, 171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
+		],
+	))
+	.unwrap();
+}
+
 impl pallet_pendulum_amm::Config for Runtime {
 	type Event = Event;
 	type Balance = Balance;
@@ -268,9 +287,9 @@ impl pallet_pendulum_amm::Config for Runtime {
 	type SubFee = ConstU128<997>;
 	type MulBalance = ConstU128<1000>;
 	type SwapMulBalance = ConstU128<3>;
+	type Asset0 = StellarEurAsset;
+	type Asset1 = StellarUsdcAsset;
 }
-
-
 
 parameter_types! {
 	pub const ExistentialDeposit: u128 = EXISTENTIAL_DEPOSIT;
@@ -444,10 +463,15 @@ pub struct Extension;
 
 impl AmmExtension<AccountId, CurrencyId, Balance, u64> for Extension {
 	fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance {
-		<Tokens as MultiCurrency<AccountId>>::total_balance(asset,owner)
+		<Tokens as MultiCurrency<AccountId>>::total_balance(asset, owner)
 	}
 
-	fn transfer_balance(from: &AccountId, to: &AccountId, asset: CurrencyId, amount: Balance) -> sp_runtime::DispatchResult {
+	fn transfer_balance(
+		from: &AccountId,
+		to: &AccountId,
+		asset: CurrencyId,
+		amount: Balance,
+	) -> sp_runtime::DispatchResult {
 		<Currencies as MultiCurrency<AccountId>>::transfer(asset, from, to, amount)
 	}
 
@@ -629,7 +653,7 @@ construct_runtime!(
 		Contracts: pallet_contracts,
 		Currencies: orml_currencies,
 		Tokens: orml_tokens exclude_parts { Call },
-		Amm: pallet_pendulum_amm
+		AmmEURUSDC: pallet_pendulum_amm
 	}
 );
 
@@ -772,6 +796,7 @@ impl_runtime_apis! {
 			list_benchmark!(list, extra, frame_system, SystemBench::<Runtime>);
 			list_benchmark!(list, extra, pallet_balances, Balances);
 			list_benchmark!(list, extra, pallet_timestamp, Timestamp);
+			// list_benchmark!(list, extra, pallet_pendulum_amm, Amm);
 
 			let storage_info = AllPalletsWithSystem::storage_info();
 

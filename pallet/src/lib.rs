@@ -33,6 +33,7 @@ pub mod pallet {
 	// use substrate_stellar_sdk as stellar;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
+	// todo: move to config, the assets.
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_timestamp::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
@@ -97,6 +98,12 @@ pub mod pallet {
 		// todo: this needs a proper name
 		#[pallet::constant]
 		type SwapMulBalance: Get<Self::Balance>;
+
+		#[pallet::constant]
+		type Asset0: Get<Self::CurrencyId>;
+
+		#[pallet::constant]
+		type Asset1: Get<Self::CurrencyId>;
 	}
 
 	#[pallet::genesis_config]
@@ -104,20 +111,12 @@ pub mod pallet {
 		pub contract_id: Option<T::AccountId>,
 		pub zero_account: Option<T::AccountId>,
 		pub fee_to_setter: Option<T::AccountId>,
-		pub asset_0: Option<T::CurrencyId>,
-		pub asset_1: Option<T::CurrencyId>,
 	}
 
 	#[cfg(feature = "std")]
 	impl<T: Config> Default for GenesisConfig<T> {
 		fn default() -> Self {
-			Self {
-				contract_id: None,
-				zero_account: None,
-				fee_to_setter: None,
-				asset_0: None,
-				asset_1: None,
-			}
+			Self { contract_id: None, zero_account: None, fee_to_setter: None }
 		}
 	}
 
@@ -135,28 +134,12 @@ pub mod pallet {
 			if let Some(fee_to_setter) = &self.fee_to_setter {
 				<FeeToSetter<T>>::put(fee_to_setter.clone());
 			}
-
-			if let Some(asset) = &self.asset_0 {
-				<Asset0<T>>::put(asset.clone());
-			}
-
-			if let Some(asset) = &self.asset_1 {
-				<Asset1<T>>::put(asset.clone());
-			}
 		}
 	}
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
-
-	#[pallet::storage]
-	#[pallet::getter(fn asset_0)]
-	pub(super) type Asset0<T: Config> = StorageValue<_, T::CurrencyId, OptionQuery>;
-
-	#[pallet::storage]
-	#[pallet::getter(fn asset_1)]
-	pub(super) type Asset1<T: Config> = StorageValue<_, T::CurrencyId, OptionQuery>;
 
 	#[derive(Debug, Clone, Encode, Decode, Eq, PartialEq, Default, MaxEncodedLen, TypeInfo)]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
@@ -341,8 +324,8 @@ pub mod pallet {
 			let contract = <ContractId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
-			let asset_0 = <Asset0<T>>::get().unwrap();
-			let asset_1 = <Asset1<T>>::get().unwrap();
+			let asset_0 = T::Asset0::get();
+			let asset_1 = T::Asset1::get();
 
 			let amount_0_calc =
 				balance_of::<T>(&contract, asset_0).checked_sub(&reserves.reserve_0);
@@ -365,8 +348,8 @@ pub mod pallet {
 			let contract = <ContractId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
-			let asset_0 = <Asset0<T>>::get().unwrap();
-			let asset_1 = <Asset1<T>>::get().unwrap();
+			let asset_0 = T::Asset0::get();
+			let asset_1 = T::Asset1::get();
 
 			let balance_0 = balance_of::<T>(&contract, asset_0);
 			let balance_1 = balance_of::<T>(&contract, asset_1);
@@ -383,8 +366,8 @@ pub mod pallet {
 			let contract = <ContractId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
-			let asset_0 = <Asset0<T>>::get().unwrap();
-			let asset_1 = <Asset1<T>>::get().unwrap();
+			let asset_0 = T::Asset0::get();
+			let asset_1 = T::Asset1::get();
 
 			let zero = T::Balance::zero();
 
@@ -406,8 +389,8 @@ pub mod pallet {
 			let contract = <ContractId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
-			let asset_0 = <Asset0<T>>::get().unwrap();
-			let asset_1 = <Asset1<T>>::get().unwrap();
+			let asset_0 = T::Asset0::get();
+			let asset_1 = T::Asset1::get();
 
 			let amount_0 = quote::<T>(amount, reserves.reserve_1, reserves.reserve_0)?;
 
@@ -446,7 +429,7 @@ pub mod pallet {
 			let amount_0_in =
 				get_amount_in::<T>(amount_to_receive, reserves.reserve_0, reserves.reserve_1)?;
 
-			let asset_0 = <Asset0<T>>::get().unwrap();
+			let asset_0 = T::Asset0::get();
 
 			transfer_tokens::<T>(&caller, &contract, asset_0, amount_0_in)?;
 
@@ -467,7 +450,7 @@ pub mod pallet {
 			let amount_1_in =
 				get_amount_in::<T>(amount_to_receive, reserves.reserve_1, reserves.reserve_0)?;
 
-			let asset_1 = <Asset1<T>>::get().unwrap();
+			let asset_1 = T::Asset1::get();
 
 			transfer_tokens::<T>(&caller, &contract, asset_1, amount_1_in)?;
 
@@ -494,20 +477,20 @@ pub struct AmmExtendedEmpty<T>(PhantomData<T>);
 impl<T: Config> AmmExtension<T::AccountId, T::CurrencyId, T::Balance, T::Moment>
 	for AmmExtendedEmpty<T>
 {
-	fn fetch_balance(owner: &T::AccountId, asset: T::CurrencyId) -> T::Balance {
+	fn fetch_balance(_owner: &T::AccountId, _asset: T::CurrencyId) -> T::Balance {
 		T::Balance::zero()
 	}
 
 	fn transfer_balance(
-		from: &T::AccountId,
-		to: &T::AccountId,
-		asset: T::CurrencyId,
-		amount: T::Balance,
+		_from: &T::AccountId,
+		_to: &T::AccountId,
+		_asset: T::CurrencyId,
+		_amount: T::Balance,
 	) -> DispatchResult {
 		Ok(())
 	}
 
-	fn moment_to_balance_type(moment: T::Moment) -> T::Balance {
+	fn moment_to_balance_type(_moment: T::Moment) -> T::Balance {
 		T::Balance::zero()
 	}
 }
