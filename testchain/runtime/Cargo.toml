@@ -111,6 +111,7 @@ runtime-benchmarks = [
 	"pallet-balances/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
+	"pallet-pendulum-amm/runtime-benchmarks"
 ]
 try-runtime = [
 	"frame-executive/try-runtime",

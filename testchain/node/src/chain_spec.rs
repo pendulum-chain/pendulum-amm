@@ -168,8 +168,8 @@ fn testnet_genesis(
 				.iter()
 				.flat_map(|x| {
 					vec![
-						(x.clone(), stellar_usdc_asset, 10u128.pow(12)),
-						(x.clone(), stellar_eur_asset, 10u128.pow(12)),
+						(x.clone(), stellar_usdc_asset, 100u128.pow(12)),
+						(x.clone(), stellar_eur_asset, 100u128.pow(12)),
 					]
 				})
 				.collect(),

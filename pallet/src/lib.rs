@@ -10,6 +10,11 @@ mod tests;
 #[cfg(test)]
 mod mock;
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod weights;
+
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +43,8 @@ pub mod pallet {
 	pub trait Config: frame_system::Config + pallet_timestamp::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+
+		type WeightInfo: WeightInfo;
 
 		type Balance: Parameter
 			+ Member
@@ -104,6 +111,16 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type Asset1: Get<Self::CurrencyId>;
+	}
+
+	pub trait WeightInfo {
+		fn set_fee_to() -> Weight;
+		fn skim() -> Weight;
+		fn deposit_asset_1() -> Weight;
+		fn deposit_asset_2() -> Weight;
+		fn withdraw() -> Weight;
+		fn swap_asset_1_for_asset_2() -> Weight;
+		fn swap_asset_2_for_asset_1() -> Weight;
 	}
 
 	#[pallet::genesis_config]
@@ -301,7 +318,7 @@ pub mod pallet {
 	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::weight(10_000 + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(<T as Config>::WeightInfo::set_fee_to())]
 		pub fn set_fee_to(origin: OriginFor<T>, fee_to: T::AccountId) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
 
@@ -316,9 +333,9 @@ pub mod pallet {
 		}
 
 		/// Force balances to match reserves
-		/// At this point, the caller is the recepient.
+		/// At this point, the caller is the recipient.
 		/// todo: weight
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::skim())]
 		pub fn skim(origin: OriginFor<T>) -> DispatchResult {
 			let to = ensure_signed(origin)?;
 			let contract = <ContractId<T>>::get().unwrap();
@@ -360,7 +377,7 @@ pub mod pallet {
 		}
 
 		/// Add liquidity
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::deposit_asset_1())]
 		pub fn deposit_asset_1(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
 			let contract = <ContractId<T>>::get().unwrap();
@@ -383,7 +400,7 @@ pub mod pallet {
 			mint::<T>(&caller, caller.clone())
 		}
 
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::deposit_asset_2())]
 		pub fn deposit_asset_2(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
 			let contract = <ContractId<T>>::get().unwrap();
@@ -392,7 +409,13 @@ pub mod pallet {
 			let asset_0 = T::Asset0::get();
 			let asset_1 = T::Asset1::get();
 
-			let amount_0 = quote::<T>(amount, reserves.reserve_1, reserves.reserve_0)?;
+			let zero = T::Balance::zero();
+
+			let amount_0 = if reserves.reserve_0 == zero && reserves.reserve_1 == zero {
+				amount
+			} else {
+				quote::<T>(amount, reserves.reserve_1, reserves.reserve_0)?
+			};
 
 			transfer_tokens::<T>(&caller, &contract, asset_0, amount_0)?;
 			transfer_tokens::<T>(&caller, &contract, asset_1, amount)?;
@@ -401,7 +424,7 @@ pub mod pallet {
 		}
 
 		/// Remove Liquidity
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::withdraw())]
 		pub fn withdraw(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
 			let contract = <ContractId<T>>::get().unwrap();
@@ -416,7 +439,7 @@ pub mod pallet {
 			burn::<T>(&caller, caller.clone()).map_err(|e| DispatchError::from(e))
 		}
 
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::swap_asset_1_for_asset_2())]
 		pub fn swap_asset_1_for_asset_2(
 			origin: OriginFor<T>,
 			amount_to_receive: T::Balance,
@@ -429,6 +452,8 @@ pub mod pallet {
 			let amount_0_in =
 				get_amount_in::<T>(amount_to_receive, reserves.reserve_0, reserves.reserve_1)?;
 
+			info!("amount_0_in: {:?}", amount_0_in);
+
 			let asset_0 = T::Asset0::get();
 
 			transfer_tokens::<T>(&caller, &contract, asset_0, amount_0_in)?;
@@ -437,7 +462,7 @@ pub mod pallet {
 				.map_err(|e| DispatchError::from(e))
 		}
 
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::swap_asset_2_for_asset_1())]
 		pub fn swap_asset_2_for_asset_1(
 			origin: OriginFor<T>,
 			amount_to_receive: T::Balance,

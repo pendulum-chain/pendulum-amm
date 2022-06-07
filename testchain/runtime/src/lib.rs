@@ -278,6 +278,7 @@ parameter_types! {
 
 impl pallet_pendulum_amm::Config for Runtime {
 	type Event = Event;
+	type WeightInfo = pallet_pendulum_amm::weights::WeightInfo<Runtime>;
 	type Balance = Balance;
 	type CurrencyId = CurrencyId;
 	type AmmExtension = Extension;
@@ -796,7 +797,7 @@ impl_runtime_apis! {
 			list_benchmark!(list, extra, frame_system, SystemBench::<Runtime>);
 			list_benchmark!(list, extra, pallet_balances, Balances);
 			list_benchmark!(list, extra, pallet_timestamp, Timestamp);
-			// list_benchmark!(list, extra, pallet_pendulum_amm, Amm);
+			list_benchmark!(list, extra, pallet_pendulum_amm, AmmEURUSDC);
 
 			let storage_info = AllPalletsWithSystem::storage_info();
 
@@ -834,6 +835,7 @@ impl_runtime_apis! {
 			add_benchmark!(params, batches, frame_system, SystemBench::<Runtime>);
 			add_benchmark!(params, batches, pallet_balances, Balances);
 			add_benchmark!(params, batches, pallet_timestamp, Timestamp);
+			add_benchmark!(params, batches, pallet_pendulum_amm, AmmEURUSDC);
 
 			Ok(batches)
 		}
