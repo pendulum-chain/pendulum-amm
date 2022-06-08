@@ -3,11 +3,11 @@ use super::*;
 use crate::helper::*;
 
 use crate::Pallet as Amm;
+use pallet_timestamp::Pallet as Timestamp;
 use frame_benchmarking::{account, benchmarks, whitelisted_caller};
 use frame_support::{log::info, traits::Get};
 use frame_system::RawOrigin;
-use sp_runtime::traits::{Bounded, One};
-use sp_std::ops::{Add, Sub};
+use sp_runtime::traits::One;
 
 benchmarks! {
 	set_fee_to {
@@ -32,6 +32,34 @@ benchmarks! {
 		let asset_1 = T::Asset1::get();
 		let verify_asset_1 = balance_of::<T>(&caller, asset_1);
 		assert_eq!(verify_asset_1, T::Balance::zero());
+	}
+
+	sync {
+		let caller: T::AccountId = whitelisted_caller();
+		let orig_bal = BalanceReserves::new(10u8.into(),5u8.into(),2u8.into());
+		<Reserves<T>>::put(orig_bal);
+
+		<Timestamp<T>>::set_timestamp(3u8.into());
+
+		let (r_orig0, r_orig1, time_orig) = reserves::<T>();
+
+	}: _(RawOrigin::Signed(caller.clone()))
+	verify {
+		let asset_0 = T::Asset0::get();
+		let asset_1 = T::Asset1::get();
+		let contract = <ContractId<T>>::get().unwrap();
+
+		let balance_0 = balance_of::<T>(&contract, asset_0);
+		let balance_1 = balance_of::<T>(&contract, asset_1);
+
+		let (r_new0, r_new1, time_new) = reserves::<T>();
+		assert_ne!(r_new0, r_orig0);
+		assert_eq!(r_new0, balance_0);
+
+		assert_ne!(r_new1, r_orig1);
+		assert_eq!(r_new1, balance_1);
+
+		assert!(time_new > time_orig);
 	}
 
 	deposit_asset_1{
@@ -195,7 +223,7 @@ benchmarks! {
 		assert!(reserve_0 > reserve_1);
 	}
 
-		swap_asset_2_for_asset_1{
+	swap_asset_2_for_asset_1{
 		let caller: T::AccountId = <FeeToSetter<T>>::get().unwrap();
 		let origin = RawOrigin::Signed(caller.clone());
 

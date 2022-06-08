@@ -116,6 +116,7 @@ pub mod pallet {
 	pub trait WeightInfo {
 		fn set_fee_to() -> Weight;
 		fn skim() -> Weight;
+		fn sync() -> Weight;
 		fn deposit_asset_1() -> Weight;
 		fn deposit_asset_2() -> Weight;
 		fn withdraw() -> Weight;
@@ -359,7 +360,7 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::sync())]
 		pub fn sync(origin: OriginFor<T>) -> DispatchResult {
 			let _ = ensure_signed(origin)?;
 			let contract = <ContractId<T>>::get().unwrap();
@@ -451,8 +452,6 @@ pub mod pallet {
 			// TODO check if the reserves are in correct order
 			let amount_0_in =
 				get_amount_in::<T>(amount_to_receive, reserves.reserve_0, reserves.reserve_1)?;
-
-			info!("amount_0_in: {:?}", amount_0_in);
 
 			let asset_0 = T::Asset0::get();
 
