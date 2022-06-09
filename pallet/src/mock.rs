@@ -124,12 +124,9 @@ impl Config for Test {
 	type Balance = Balance;
 	type CurrencyId = Asset;
 	type AmmExtension = Extension;
-	// type AddressConversion = ();
-	type MinimumLiquidity = ConstU128<1>;
+	type MinimumLiquidity = ConstU128<1000>;
 	type MintFee = ConstU128<5>;
-	type SubFee = ConstU128<997>;
-	type MulBalance = ConstU128<1000>;
-	type SwapMulBalance = ConstU128<3>;
+	type BaseFee = ConstU128<3>;
 	type Asset0 = Asset0;
 	type Asset1 = Asset1;
 }

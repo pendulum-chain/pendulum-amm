@@ -3,10 +3,10 @@ use super::*;
 use crate::helper::*;
 
 use crate::Pallet as Amm;
-use pallet_timestamp::Pallet as Timestamp;
 use frame_benchmarking::{account, benchmarks, whitelisted_caller};
 use frame_support::{log::info, traits::Get};
 use frame_system::RawOrigin;
+use pallet_timestamp::Pallet as Timestamp;
 use sp_runtime::traits::One;
 
 benchmarks! {
@@ -47,7 +47,7 @@ benchmarks! {
 	verify {
 		let asset_0 = T::Asset0::get();
 		let asset_1 = T::Asset1::get();
-		let contract = <ContractId<T>>::get().unwrap();
+		let contract = <PalletAccountId<T>>::get().unwrap();
 
 		let balance_0 = balance_of::<T>(&contract, asset_0);
 		let balance_1 = balance_of::<T>(&contract, asset_1);
@@ -74,7 +74,7 @@ benchmarks! {
 		let deposit_bal = T::Balance::from(10u8);
 	}: _(RawOrigin::Signed(caller.clone()), deposit_bal)
 	verify {
-		let contract = <ContractId<T>>::get().unwrap();
+		let contract = <PalletAccountId<T>>::get().unwrap();
 		let contract_result = balance_of::<T>(&contract, asset_0);
 		assert_eq!(contract_result, deposit_bal);
 
@@ -106,7 +106,7 @@ benchmarks! {
 		let deposit_bal = T::Balance::from(10u8);
 	}: _(RawOrigin::Signed(caller.clone()), deposit_bal)
 	verify {
-		let contract = <ContractId<T>>::get().unwrap();
+		let contract = <PalletAccountId<T>>::get().unwrap();
 		let contract_result = balance_of::<T>(&contract, asset_0);
 		assert_eq!(contract_result, deposit_bal);
 
@@ -143,7 +143,7 @@ benchmarks! {
 		let caller_orig0_bal = balance_of::<T>(&caller, asset_0);
 		let caller_orig1_bal = balance_of::<T>(&caller, asset_1);
 
-		let contract = <ContractId<T>>::get().unwrap();
+		let contract = <PalletAccountId<T>>::get().unwrap();
 		let contract_orig0_bal = balance_of::<T>(&contract, asset_0);
 		let contract_orig1_bal = balance_of::<T>(&contract, asset_1);
 
@@ -198,7 +198,7 @@ benchmarks! {
 		let caller_orig0_bal = balance_of::<T>(&caller, asset_0);
 		let caller_orig1_bal = balance_of::<T>(&caller, asset_1);
 
-		let contract = <ContractId<T>>::get().unwrap();
+		let contract = <PalletAccountId<T>>::get().unwrap();
 		let contract_orig0_bal = balance_of::<T>(&contract, asset_0);
 		let contract_orig1_bal = balance_of::<T>(&contract, asset_1);
 
@@ -236,7 +236,7 @@ benchmarks! {
 		let caller_orig0_bal = balance_of::<T>(&caller, asset_0);
 		let caller_orig1_bal = balance_of::<T>(&caller, asset_1);
 
-		let contract = <ContractId<T>>::get().unwrap();
+		let contract = <PalletAccountId<T>>::get().unwrap();
 		let contract_orig0_bal = balance_of::<T>(&contract, asset_0);
 		let contract_orig1_bal = balance_of::<T>(&contract, asset_1);
 

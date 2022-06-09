@@ -2,8 +2,8 @@
 
 use crate::{
 	pallet::{
-		reserves, AddressZero, BalanceReserves, Config, ContractId, Error, Event, FeeTo, KLast,
-		LpBalances, Pallet, Price0CumulativeLast, Price1CumulativeLast, Reserves, TotalSupply,
+		reserves, AddressZero, BalanceReserves, Config, Error, Event, FeeTo, KLast, LpBalances,
+		Pallet, PalletAccountId, Price0CumulativeLast, Price1CumulativeLast, Reserves, TotalSupply,
 	},
 	AmmExtension,
 };
@@ -21,7 +21,7 @@ type FuncResult<T> = Result<(), Error<T>>;
 pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
 	let zero = T::Balance::zero();
 
-	let contract = <ContractId<T>>::get().unwrap();
+	let contract = <PalletAccountId<T>>::get().unwrap();
 	let (reserve_0, reserve_1, _) = reserves::<T>();
 
 	let asset_0 = T::Asset0::get();
@@ -38,12 +38,12 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 
 	let liquidity = if total_supply == zero {
 		let to_sqrt = amount_0.saturating_mul(amount_1);
-		let liquidity = to_sqrt.integer_sqrt().saturating_sub(T::MinimumLiquidity::get());
+		let liquidity = to_sqrt.integer_sqrt().saturating_sub(T::Balance::one());
 
 		let address_zero = <AddressZero<T>>::get().unwrap();
 
 		// permanently lock first liquidity tokens
-		_mint::<T>(&address_zero, T::MinimumLiquidity::get());
+		_mint::<T>(&address_zero, T::Balance::one());
 
 		liquidity
 	} else {
@@ -72,7 +72,7 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 pub fn burn<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
 	let zero = T::Balance::zero();
 
-	let contract = <ContractId<T>>::get().unwrap();
+	let contract = <PalletAccountId<T>>::get().unwrap();
 	let (reserve_0, reserve_1, _) = reserves::<T>();
 
 	let asset_0 = T::Asset0::get();
@@ -142,7 +142,7 @@ pub fn _swap<T: Config>(
 	);
 
 	// optimistically transfe tokens
-	let contract = <ContractId<T>>::get().unwrap();
+	let contract = <PalletAccountId<T>>::get().unwrap();
 
 	if amount_0_out > zero {
 		transfer_tokens::<T>(&contract, to, asset_0.clone(), amount_0_out)?;
@@ -172,8 +172,8 @@ pub fn _swap<T: Config>(
 		Error::<T>::InsufficientInputAmount
 	}
 
-	let multiplier_1000 = T::MulBalance::get();
-	let multiplier_3 = T::SwapMulBalance::get();
+	let multiplier_1000 = T::MinimumLiquidity::get();
+	let multiplier_3 = T::BaseFee::get();
 
 	let balance_0_adjusted = balance_0
 		.saturating_mul(multiplier_1000)
@@ -246,11 +246,11 @@ pub fn _update<T: Config>(
 	                               reserve_x: T::Balance,
 	                               reserve_y: T::Balance,
 	                               time_elapsed: T::Balance| {
-		// * never overflows, and + overflow is desired
+		// TODO: * never overflows, and + overflow is desired
 		let to_add = reserve_x.checked_div(&reserve_y).unwrap_or(zero).saturating_mul(time_elapsed);
 
 		*price = price.clone().checked_add(&to_add).unwrap_or(zero);
-		// *price = price.clone().overflowing_add(to_add).0;
+		// TODO: *price = price.clone().overflowing_add(to_add).0;
 	};
 
 	if time_elapsed > zero && reserve_0 != zero && reserve_1 != zero {
@@ -369,10 +369,14 @@ pub fn _get_amount_out<T: Config>(
 
 	ensure!(reserve_in > zero && reserve_out > zero, Error::<T>::InsufficientLiquidity);
 
-	let amount_in_with_fee = amount_in.saturating_mul(T::SubFee::get());
+	let amount_in_with_fee = {
+		let sub_fee = T::MinimumLiquidity::get() - T::BaseFee::get(); // expected to be 997
+		amount_in.saturating_mul(sub_fee)
+	};
+
 	let numerator = amount_in_with_fee.saturating_mul(reserve_out);
 	let denominator = reserve_in
-		.saturating_mul(T::MulBalance::get())
+		.saturating_mul(T::MinimumLiquidity::get())
 		.saturating_add(amount_in_with_fee);
 
 	Ok(numerator.checked_div(&denominator).unwrap_or(T::Balance::zero()))
@@ -393,8 +397,12 @@ pub fn get_amount_in<T: Config>(
 		return Err(Error::<T>::InsufficientLiquidity)
 	}
 
-	let numerator = reserve_in.saturating_mul(reserve_out).saturating_mul(T::MulBalance::get());
-	let denominator = reserve_out.saturating_sub(amount_out).saturating_mul(T::SubFee::get());
+	let sub_fee = T::MinimumLiquidity::get() - T::BaseFee::get(); //expected to be 997
+
+	let numerator = reserve_in
+		.saturating_mul(reserve_out)
+		.saturating_mul(T::MinimumLiquidity::get());
+	let denominator = reserve_out.saturating_sub(amount_out).saturating_mul(sub_fee);
 
 	Ok(numerator
 		.checked_div(&denominator)

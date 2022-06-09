@@ -285,9 +285,7 @@ impl pallet_pendulum_amm::Config for Runtime {
 	type MinimumLiquidity = ConstU128<1>;
 
 	type MintFee = ConstU128<5>;
-	type SubFee = ConstU128<997>;
-	type MulBalance = ConstU128<1000>;
-	type SwapMulBalance = ConstU128<3>;
+	type BaseFee = ConstU128<3>;
 	type Asset0 = StellarEurAsset;
 	type Asset1 = StellarUsdcAsset;
 }
@@ -444,7 +442,7 @@ parameter_types! {
 			<Runtime as pallet_contracts::Config>::WeightInfo::on_initialize_per_queue_item(0)
 		)) / 5) as u32;
 	pub Schedule: pallet_contracts::Schedule<Runtime> = {
-		let mut schedule = pallet_contracts::Schedule::<Runtime>::default();
+		let schedule = pallet_contracts::Schedule::<Runtime>::default();
 		// We decided to **temporarily* increase the default allowed contract size here
 		// (the default is `128 * 1024`).
 		//

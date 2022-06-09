@@ -40,14 +40,14 @@ impl<T: frame_system::Config> crate::WeightInfo for WeightInfo<T> {
 			.saturating_add(T::DbWeight::get().reads(1 as Weight))
 			.saturating_add(T::DbWeight::get().writes(1 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC Reserves (r:1 w:0)
 	// Storage: Tokens Accounts (r:2 w:0)
 	fn skim() -> Weight {
 		(17_340_000 as Weight)
 			.saturating_add(T::DbWeight::get().reads(4 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC Reserves (r:1 w:1)
 	// Storage: Tokens Accounts (r:2 w:0)
 	// Storage: Timestamp Now (r:1 w:0)
@@ -58,7 +58,7 @@ impl<T: frame_system::Config> crate::WeightInfo for WeightInfo<T> {
 			.saturating_add(T::DbWeight::get().reads(7 as Weight))
 			.saturating_add(T::DbWeight::get().writes(3 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC Reserves (r:1 w:1)
 	// Storage: Tokens Accounts (r:4 w:4)
 	// Storage: System Account (r:2 w:1)
@@ -73,7 +73,7 @@ impl<T: frame_system::Config> crate::WeightInfo for WeightInfo<T> {
 			.saturating_add(T::DbWeight::get().reads(15 as Weight))
 			.saturating_add(T::DbWeight::get().writes(9 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC Reserves (r:1 w:1)
 	// Storage: Tokens Accounts (r:4 w:4)
 	// Storage: System Account (r:2 w:1)
@@ -88,7 +88,7 @@ impl<T: frame_system::Config> crate::WeightInfo for WeightInfo<T> {
 			.saturating_add(T::DbWeight::get().reads(15 as Weight))
 			.saturating_add(T::DbWeight::get().writes(9 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC TotalSupply (r:1 w:1)
 	// Storage: AmmEURUSDC LpBalances (r:2 w:2)
 	// Storage: AmmEURUSDC Reserves (r:1 w:1)
@@ -102,7 +102,7 @@ impl<T: frame_system::Config> crate::WeightInfo for WeightInfo<T> {
 			.saturating_add(T::DbWeight::get().reads(13 as Weight))
 			.saturating_add(T::DbWeight::get().writes(9 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC Reserves (r:1 w:1)
 	// Storage: Tokens Accounts (r:4 w:4)
 	// Storage: System Account (r:2 w:0)
@@ -112,7 +112,7 @@ impl<T: frame_system::Config> crate::WeightInfo for WeightInfo<T> {
 			.saturating_add(T::DbWeight::get().reads(9 as Weight))
 			.saturating_add(T::DbWeight::get().writes(5 as Weight))
 	}
-	// Storage: AmmEURUSDC ContractId (r:1 w:0)
+	// Storage: AmmEURUSDC PalletAccountId (r:1 w:0)
 	// Storage: AmmEURUSDC Reserves (r:1 w:1)
 	// Storage: Tokens Accounts (r:4 w:4)
 	// Storage: System Account (r:2 w:0)

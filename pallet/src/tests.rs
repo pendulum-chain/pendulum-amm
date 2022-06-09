@@ -131,8 +131,6 @@ fn deposit_works_for_unbalanced_pair() {
 		// expect that amount_0_in is less than amount_1_in because
 		// the pair has a ratio of 900:1111 after the swap thus TOKEN_0 is more valuable
 		assert_eq!(true, amount_0_in < amount_1_in);
-
-		let reserves = reserves::<Test>();
 	})
 }
 
@@ -159,7 +157,7 @@ fn withdraw_without_lp_fails() {
 			mock::Event::Amm(Event::Transfer { from: _, to: _, value }) => {
 				let gained_lp = *value;
 				assert_err!(
-					// try withdrawing more LP than account has 
+					// try withdrawing more LP than account has
 					Amm::withdraw(Origin::signed(origin_to), gained_lp + 2),
 					Error::<Test>::InsufficientBalance
 				)

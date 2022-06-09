@@ -88,23 +88,10 @@ pub mod pallet {
 		#[pallet::constant]
 		type MintFee: Get<Self::Balance>;
 
-		// a value to substract to, in the `get_amount_out` and `get_amount_in` funcs.
-		// expected value is 997
-		// todo: this needs a proper name
-		#[pallet::constant]
-		type SubFee: Get<Self::Balance>;
-
-		// a value to multiply to, in the `get_amount_out`, `get_amount_in`, `swap` funcs.
-		// expected value is 1000
-		// todo: this needs a proper name
-		#[pallet::constant]
-		type MulBalance: Get<Self::Balance>;
-
 		// a value to multiply to, in the `swap` func.
 		// expected value is 3
-		// todo: this needs a proper name
 		#[pallet::constant]
-		type SwapMulBalance: Get<Self::Balance>;
+		type BaseFee: Get<Self::Balance>;
 
 		#[pallet::constant]
 		type Asset0: Get<Self::CurrencyId>;
@@ -142,7 +129,7 @@ pub mod pallet {
 	impl<T: Config> GenesisBuild<T> for GenesisConfig<T> {
 		fn build(&self) {
 			if let Some(contract) = &self.contract_id {
-				<ContractId<T>>::put(contract.clone());
+				<PalletAccountId<T>>::put(contract.clone());
 			}
 
 			if let Some(address_zero) = &self.zero_account {
@@ -233,7 +220,7 @@ pub mod pallet {
 		StorageMap<_, Blake2_128Concat, T::AccountId, T::Balance, OptionQuery>;
 
 	#[pallet::storage]
-	pub(super) type ContractId<T: Config> = StorageValue<_, T::AccountId, OptionQuery>; // what exactly is this? the account id of this pallet kind of but does it make sense?
+	pub(super) type PalletAccountId<T: Config> = StorageValue<_, T::AccountId, OptionQuery>; // what exactly is this? the account id of this pallet kind of but does it make sense?
 
 	#[pallet::storage]
 	pub(super) type AddressZero<T: Config> = StorageValue<_, T::AccountId, OptionQuery>;
@@ -330,7 +317,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::skim())]
 		pub fn skim(origin: OriginFor<T>) -> DispatchResult {
 			let to = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -354,7 +341,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::sync())]
 		pub fn sync(origin: OriginFor<T>) -> DispatchResult {
 			let _ = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -372,7 +359,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::deposit_asset_1())]
 		pub fn deposit_asset_1(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -395,7 +382,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::deposit_asset_2())]
 		pub fn deposit_asset_2(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -419,7 +406,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::withdraw())]
 		pub fn withdraw(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 
 			ensure!(
 				<TotalSupply<T>>::get() != T::Balance::zero(),
@@ -437,7 +424,7 @@ pub mod pallet {
 			amount_to_receive: T::Balance,
 		) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
 			let amount_0_in =
@@ -457,7 +444,7 @@ pub mod pallet {
 			amount_to_receive: T::Balance,
 		) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <ContractId<T>>::get().unwrap();
+			let contract = <PalletAccountId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
 			let amount_1_in =
