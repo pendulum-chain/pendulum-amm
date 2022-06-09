@@ -1,10 +1,4 @@
-<div background="red">
-  <h2 align="center">🚧 Under construction 🚧</h2>
-  <h3 align="center">This is an early prototype right now. Do not try to run this in production!</h3>
-</div>
-<br>
-
-# pendulum-amm
+# Pendulum AMM - smart contract
 
 Pendulum AMM smart contract. Built with ink!
 
@@ -22,14 +16,6 @@ cargo install cargo-dylint dylint-link
 cargo install cargo-contract --force --locked
 ```
 
-## Building the contract
-
-To compile the contract use:
-
-```
-cargo contract build
-```
-
 ## Testing
 
 To run the tests you can use two different commands depending on whether you want to see the output of `debug_println!` messages in your terminal or not.
@@ -40,3 +26,15 @@ cargo test
 # Run tests with debug logs in console
 cargo test -- --nocapture
 ```
+
+## Building the contract
+
+To compile the contract use:
+
+```
+cargo contract build
+```
+
+## Deploying the contract
+
+To deploy the contract, run the testchain (contained in this repository) and follow the steps of [this](https://ink.substrate.io/getting-started/deploy-your-contract) guide.
