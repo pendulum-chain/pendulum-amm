@@ -233,7 +233,7 @@ pub mod pallet {
 		StorageMap<_, Blake2_128Concat, T::AccountId, T::Balance, OptionQuery>;
 
 	#[pallet::storage]
-	pub(super) type ContractId<T: Config> = StorageValue<_, T::AccountId, OptionQuery>;
+	pub(super) type ContractId<T: Config> = StorageValue<_, T::AccountId, OptionQuery>; // what exactly is this? the account id of this pallet kind of but does it make sense?
 
 	#[pallet::storage]
 	pub(super) type AddressZero<T: Config> = StorageValue<_, T::AccountId, OptionQuery>;
@@ -303,15 +303,6 @@ pub mod pallet {
 		PairExists,
 		AddressGenerationFailed,
 		WithdrawWithoutSupply,
-
-		// -- mod errors
-		InvalidStellarKeyEncoding,
-		InvalidStellarKeyEncodingLength,
-		InvalidStellarKeyChecksum,
-		InvalidStellarKeyEncodingVersion,
-		AssetCodeTooLong,
-		InvalidAssetCodeCharacter,
-		InvalidBase32Character,
 	}
 
 	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
@@ -449,7 +440,6 @@ pub mod pallet {
 			let contract = <ContractId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
-			// TODO check if the reserves are in correct order
 			let amount_0_in =
 				get_amount_in::<T>(amount_to_receive, reserves.reserve_0, reserves.reserve_1)?;
 
@@ -470,7 +460,6 @@ pub mod pallet {
 			let contract = <ContractId<T>>::get().unwrap();
 			let reserves = <Reserves<T>>::get();
 
-			// TODO check if the reserves are in correct order
 			let amount_1_in =
 				get_amount_in::<T>(amount_to_receive, reserves.reserve_1, reserves.reserve_0)?;
 
