@@ -120,6 +120,7 @@ parameter_types! {
 
 impl Config for Test {
 	type Event = Event;
+	type WeightInfo = amm::weights::WeightInfo<Test>;
 	type Balance = Balance;
 	type CurrencyId = Asset;
 	type AmmExtension = Extension;
