@@ -459,7 +459,7 @@ parameter_types! {
 	};
 }
 
-//--------------------- Chain Extension --------------------------
+//--------------------- AMM Balance Extension --------------------------
 pub struct Extension;
 
 impl AmmExtension<AccountId, CurrencyId, Balance, u64> for Extension {
