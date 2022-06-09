@@ -159,6 +159,7 @@ fn withdraw_without_lp_fails() {
 			mock::Event::Amm(Event::Transfer { from: _, to: _, value }) => {
 				let gained_lp = *value;
 				assert_err!(
+					// try withdrawing more LP than account has 
 					Amm::withdraw(Origin::signed(origin_to), gained_lp + 2),
 					Error::<Test>::InsufficientBalance
 				)
