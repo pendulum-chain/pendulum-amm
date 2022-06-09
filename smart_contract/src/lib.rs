@@ -863,7 +863,7 @@ pub mod amm {
 		}
 
 		fn _mint(&mut self, to: AccountId, value: Balance) -> Result<()> {
-			self.total_supply += value;
+			self.total_supply = self.total_supply.saturating_add(value);
 			let balance = self.lp_balance_of(to);
 			self.lp_balances.insert(to, &(balance.saturating_add(value)));
 			self.env().emit_event(Transfer { from: None, to: Some(to), value });
@@ -871,7 +871,7 @@ pub mod amm {
 		}
 
 		fn _burn(&mut self, from: AccountId, value: Balance) -> Result<()> {
-			self.total_supply -= value;
+			self.total_supply = self.total_supply.saturating_sub(value);
 			let balance = self.lp_balance_of(from);
 			self.lp_balances.insert(from, &(balance.saturating_sub(value)));
 			self.env().emit_event(Transfer { from: Some(from), to: None, value });
