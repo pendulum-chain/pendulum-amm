@@ -1,6 +1,5 @@
-use crate::{helper::balance_of, mock, mock::*, reserves, Error, Event, LpBalances, Reserves};
-use frame_support::{assert_err, assert_ok};
-use std::ops::Index;
+use crate::{helper::balance_of, mock, mock::*, reserves, Error, Event};
+use frame_support::assert_err;
 
 fn add_supply_for_account(account_id: AccountId, supply: Balance) {
 	ASSETSMAP0.with(|assets| {
@@ -15,7 +14,7 @@ fn add_supply_for_account(account_id: AccountId, supply: Balance) {
 }
 
 fn gained_lp_from_event(expected_event_order: usize) -> Balance {
-	let mut event = <frame_system::Pallet<Test>>::events();
+	let event = <frame_system::Pallet<Test>>::events();
 	let transfer_event = event.get(expected_event_order).unwrap();
 
 	match &transfer_event.event {
@@ -48,14 +47,6 @@ fn swap_test(
 
 	let user_balance_1_post_swap = balance_of::<Test>(&origin, ASSET_1);
 	assert_eq!(user_balance_1_post_swap, user_balance_1_pre_swap + swap_amount);
-}
-
-fn perform_sync() {
-	assert_ok!(Amm::sync(Origin::signed(2)));
-	let (reserves_0, reserves_1, _) = reserves::<Test>();
-
-	assert_eq!(reserves_0, 1000);
-	assert_eq!(reserves_1, 900);
 }
 
 #[test]
@@ -150,7 +141,7 @@ fn withdraw_without_lp_fails() {
 
 		Amm::deposit_asset_1(Origin::signed(origin_to), 5_000).expect("deposit should work");
 
-		let mut event = <frame_system::Pallet<Test>>::events();
+		let event = <frame_system::Pallet<Test>>::events();
 		let transfer_event = event.get(1).unwrap();
 
 		match &transfer_event.event {
@@ -188,7 +179,7 @@ fn withdraw_works() {
 
 		let (amount_0, amount_1) = {
 			let mut event = <frame_system::Pallet<Test>>::events();
-			let mut burn_event = event.last_mut().unwrap();
+			let burn_event = event.last_mut().unwrap();
 
 			match &burn_event.event {
 				mock::Event::Amm(Event::Burn { sender: _, to: _, amount_0, amount_1 }) =>
@@ -230,7 +221,7 @@ fn deposit_and_withdraw_work() {
 		Amm::withdraw(Origin::signed(origin_to), gained_lp).expect("withdraw should work");
 
 		let mut event = <frame_system::Pallet<Test>>::events();
-		let mut burn_event = event.last_mut().unwrap();
+		let burn_event = event.last_mut().unwrap();
 
 		match &burn_event.event {
 			mock::Event::Amm(Event::Burn { sender: _, to: _, amount_0, amount_1 }) => {

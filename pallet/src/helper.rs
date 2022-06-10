@@ -14,7 +14,10 @@ use sp_runtime::traits::{
 	Bounded, CheckedAdd, CheckedDiv, CheckedSub, IntegerSquareRoot, One, Saturating, Zero,
 };
 
-use sp_std::cmp;
+use sp_std::{
+	cmp,
+	ops::{Add, Sub},
+};
 
 type FuncResult<T> = Result<(), Error<T>>;
 
@@ -237,7 +240,11 @@ pub fn _update<T: Config>(
 
 	let block_timestamp: T::Moment = pallet_timestamp::Pallet::<T>::now();
 
-	let time_elapsed = block_timestamp
+	let time_elapsed = T::AmmExtension::moment_to_balance_type(
+		overflowing_sub::<T::Moment>(block_timestamp, block_timestamp_last).0,
+	);
+
+	block_timestamp
 		.checked_sub(&block_timestamp_last)
 		.map(|timestamp| T::AmmExtension::moment_to_balance_type(timestamp))
 		.unwrap_or(T::Balance::max_value()); // overflow is desired
@@ -246,11 +253,10 @@ pub fn _update<T: Config>(
 	                               reserve_x: T::Balance,
 	                               reserve_y: T::Balance,
 	                               time_elapsed: T::Balance| {
-		// TODO: * never overflows, and + overflow is desired
+		// * never overflows, and + overflow is desired
 		let to_add = reserve_x.checked_div(&reserve_y).unwrap_or(zero).saturating_mul(time_elapsed);
 
-		*price = price.clone().checked_add(&to_add).unwrap_or(zero);
-		// TODO: *price = price.clone().overflowing_add(to_add).0;
+		*price = overflowing_add::<T::Balance>(*price, to_add).0;
 	};
 
 	if time_elapsed > zero && reserve_0 != zero && reserve_1 != zero {
@@ -426,4 +432,38 @@ pub fn quote<T: Config>(
 		.checked_div(&reserve_a)
 		.unwrap_or(T::Balance::zero());
 	Ok(amount_b)
+}
+
+fn overflowing_add<Integer>(augend: Integer, addend: Integer) -> (Integer, bool)
+where
+	Integer: One + CheckedAdd + Add + Sub<Output = Integer>,
+{
+	augend.checked_add(&addend).map_or_else(
+		|| (addend - Integer::one(), true), // when there is an overflow
+		|sum| (sum, false),             // returns the sum when there is no overflow
+	)
+}
+
+fn overflowing_sub<Integer>(minuend: Integer, subtrahend: Integer) -> (Integer, bool)
+where
+	Integer: One + Bounded + CheckedSub + Sub<Output = Integer>,
+{
+	minuend.checked_sub(&subtrahend).map_or_else(
+		// when there is an overflow
+		|| {
+			let new_subtrahend = subtrahend - Integer::one();
+			(Integer::max_value() - new_subtrahend, true)
+		},
+		// returns the difference when there is no overflow
+		|difference| (difference, false),
+	)
+}
+
+#[test]
+fn overflow_test() {
+	assert_eq!(overflowing_sub::<u32>(5, 2), (3, false));
+	assert_eq!(overflowing_sub::<u32>(0, 1), (u32::MAX, true));
+
+	assert_eq!(overflowing_add::<u32>(5, 2), (7, false));
+	assert_eq!(overflowing_add::<u32>(u32::MAX, 1), (0, true));
 }
