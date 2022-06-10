@@ -4,7 +4,7 @@ use crate::helper::*;
 
 use crate::Pallet as Amm;
 use frame_benchmarking::{account, benchmarks, whitelisted_caller};
-use frame_support::{log::info, traits::Get};
+use frame_support::traits::Get;
 use frame_system::RawOrigin;
 use pallet_timestamp::Pallet as Timestamp;
 use sp_runtime::traits::One;

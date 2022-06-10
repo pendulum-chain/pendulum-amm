@@ -282,7 +282,7 @@ impl pallet_pendulum_amm::Config for Runtime {
 	type Balance = Balance;
 	type CurrencyId = CurrencyId;
 	type AmmExtension = Extension;
-	type MinimumLiquidity = ConstU128<1>;
+	type MinimumLiquidity = ConstU128<1000>;
 
 	type MintFee = ConstU128<5>;
 	type BaseFee = ConstU128<3>;
