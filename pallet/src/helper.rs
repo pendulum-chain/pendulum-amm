@@ -436,24 +436,21 @@ pub fn quote<T: Config>(
 
 fn overflowing_add<Integer>(augend: Integer, addend: Integer) -> (Integer, bool)
 where
-	Integer: One + CheckedAdd + Add + Sub<Output = Integer>,
+	Integer: Bounded + One + CheckedAdd + Add + Sub<Output = Integer>,
 {
 	augend.checked_add(&addend).map_or_else(
-		|| (addend - Integer::one(), true), // when there is an overflow
-		|sum| (sum, false),             // returns the sum when there is no overflow
+		|| (augend - (Integer::max_value() - addend) - Integer::one(), true), // when there is an overflow
+		|sum| (sum, false), // returns the sum when there is no overflow
 	)
 }
 
 fn overflowing_sub<Integer>(minuend: Integer, subtrahend: Integer) -> (Integer, bool)
 where
-	Integer: One + Bounded + CheckedSub + Sub<Output = Integer>,
+	Integer: One + Add<Output = Integer> + Bounded + CheckedSub + Sub<Output = Integer>,
 {
 	minuend.checked_sub(&subtrahend).map_or_else(
 		// when there is an overflow
-		|| {
-			let new_subtrahend = subtrahend - Integer::one();
-			(Integer::max_value() - new_subtrahend, true)
-		},
+		|| (Integer::max_value() - subtrahend + minuend + Integer::one(), true),
 		// returns the difference when there is no overflow
 		|difference| (difference, false),
 	)
@@ -462,8 +459,15 @@ where
 #[test]
 fn overflow_test() {
 	assert_eq!(overflowing_sub::<u32>(5, 2), (3, false));
+	assert_eq!(overflowing_sub::<u32>(100, 100), (0, false));
 	assert_eq!(overflowing_sub::<u32>(0, 1), (u32::MAX, true));
+	assert_eq!(overflowing_sub::<u32>(0, 2), (u32::MAX - 1, true));
+	assert_eq!(overflowing_sub::<u32>(100, u32::MAX), (101, true));
+	assert_eq!(overflowing_sub::<u8>(0, 1), (u8::MAX, true));
 
 	assert_eq!(overflowing_add::<u32>(5, 2), (7, false));
 	assert_eq!(overflowing_add::<u32>(u32::MAX, 1), (0, true));
+	assert_eq!(overflowing_add::<u32>(u32::MAX, 2), (1, true));
+	assert_eq!(overflowing_add::<u32>(u32::MAX, 200), (199, true));
+	assert_eq!(overflowing_add::<u8>(u8::MAX, 1), (0, true));
 }
