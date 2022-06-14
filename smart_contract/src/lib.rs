@@ -318,7 +318,7 @@ pub mod amm {
 	/// The ERC-20 result type.
 	pub type Result<T> = core::result::Result<T, Error>;
 
-	const MINIMUM_LIQUIDITY: u128 = 1;
+	const MINIMUM_LIQUIDITY: u128 = 1000;
 
 	/// Event emitted when a token transfer occurs.
 	#[ink(event)]
@@ -1125,10 +1125,10 @@ pub mod amm {
 			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
 
 			let mut pair = get_default_pair();
-			let initial_supply = 1_000;
+			let initial_supply = 100_000;
 			add_supply_for_account(to, initial_supply, &pair);
 
-			let deposit_amount = 100;
+			let deposit_amount = 10_000;
 
 			let user_balance_0_pre_deposit = pair.balance_of(to, pair.asset_0);
 			let user_balance_1_pre_deposit = pair.balance_of(to, pair.asset_1);
@@ -1166,11 +1166,11 @@ pub mod amm {
 			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
 
 			let mut pair = get_default_pair();
-			let initial_supply = 1_000;
+			let initial_supply = 100_000;
 			add_supply_for_account(to, initial_supply, &pair);
 
 			// execute initial deposit
-			let deposit_amount = 100;
+			let deposit_amount = 10_000;
 			let result = pair.deposit_asset_1(deposit_amount);
 			let gained_lp = result.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
@@ -1305,7 +1305,7 @@ pub mod amm {
 			let initial_supply = 1_000_000;
 			add_supply_for_account(to, initial_supply, &pair);
 
-			let gained_lp = pair.deposit_asset_1(500);
+			let gained_lp = pair.deposit_asset_1(5000);
 			let gained_lp = gained_lp.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
