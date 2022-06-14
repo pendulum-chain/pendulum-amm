@@ -1,7 +1,7 @@
 # The AMM Pallet
  
 Currently the supported assets pair is **EUR/USDC**. The **EUR** is represented as **Asset1**, and the **USDC** as **Asset2**.  
-All test accounts have a EUR and USDC balance of **_10^12_** plancks (~1 Unit).
+All test accounts have a EUR and USDC balance of **_1000^12_** plancks (~_10^24_ Units).
 
 ## Tests
 To run the unit tests, run `cargo test`.
@@ -15,7 +15,7 @@ Set the "submit the following extrinsic" field to **ammEURUSDC**.
 
 ### Deposit
 Like for the [smart contract](https://pendulum.gitbook.io/pendulum-docs/get-started/playground-ui/interacting-with-the-amm#deposit), two extrinsics are available for depositing: _depositAsset1_ and _depositAsset2_.
-1. Enter the desired amount you want to deposit in the "amount" field, e.g. "1 Unit".
+1. Enter the desired amount you want to deposit in the "amount" field, e.g. "10 Unit".
 2. Click the "Submit Transaction" and then "Sign and Submit".
 3. Go to the [Explorer](https://polkadot.js.org/apps/#/explorer) page and check on the "recent events" table on the right side. The following events should appear:
    - ammEURUSDC.Mint
