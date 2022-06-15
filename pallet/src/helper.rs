@@ -175,7 +175,7 @@ pub fn _swap<T: Config>(
 		Error::<T>::InsufficientInputAmount
 	}
 
-	let multiplier_1000 = T::Balance::from(100u8);
+	let multiplier_1000 = T::Balance::from(1000u32);
 	let multiplier_3 = T::BaseFee::get();
 
 	let balance_0_adjusted = balance_0
