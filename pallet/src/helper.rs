@@ -175,7 +175,7 @@ pub fn _swap<T: Config>(
 		Error::<T>::InsufficientInputAmount
 	}
 
-	let multiplier_1000 = T::MinimumLiquidity::get();
+	let multiplier_1000 = T::Balance::from(100u8);
 	let multiplier_3 = T::BaseFee::get();
 
 	let balance_0_adjusted = balance_0
@@ -376,7 +376,7 @@ pub fn _get_amount_out<T: Config>(
 	ensure!(reserve_in > zero && reserve_out > zero, Error::<T>::InsufficientLiquidity);
 
 	let amount_in_with_fee = {
-		let sub_fee = T::MinimumLiquidity::get() - T::BaseFee::get(); // expected to be 997
+		let sub_fee = T::Balance::from(997u32);
 		amount_in.saturating_mul(sub_fee)
 	};
 
@@ -403,7 +403,7 @@ pub fn get_amount_in<T: Config>(
 		return Err(Error::<T>::InsufficientLiquidity)
 	}
 
-	let sub_fee = T::MinimumLiquidity::get() - T::BaseFee::get(); //expected to be 997
+	let sub_fee = T::Balance::from(997u32);
 
 	let numerator = reserve_in
 		.saturating_mul(reserve_out)
