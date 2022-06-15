@@ -41,12 +41,12 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 
 	let liquidity = if total_supply == zero {
 		let to_sqrt = amount_0.saturating_mul(amount_1);
-		let liquidity = to_sqrt.integer_sqrt().saturating_sub(T::Balance::one());
+		let liquidity = to_sqrt.integer_sqrt().saturating_sub(T::MinimumLiquidity::get());
 
 		let address_zero = <AddressZero<T>>::get().unwrap();
 
 		// permanently lock first liquidity tokens
-		_mint::<T>(&address_zero, T::Balance::one());
+		_mint::<T>(&address_zero, T::MinimumLiquidity::get());
 
 		liquidity
 	} else {
