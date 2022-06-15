@@ -9,9 +9,9 @@ For convenience, the signatures of the user-facing methods were changed and are 
 
 This repository contains three main directories:
 
-- [`pallet`](pallet/README.md) - contains the AMM implementation as a pallet.
-- `smart_contract` - contains the AMM implementation as a smart contract.
-- `testchain` - a simple standalone Substrate chain.
+- [`pallet`](pallet) - contains the AMM implementation as a pallet.
+- [`smart_contract`](smart_contract) - contains the AMM implementation as a smart contract.
+- [`testchain`](testchain) - a simple standalone Substrate chain.
   The testchain has the necessary pallets for running both the AMM smart contract and pallet (e.g. the contracts, and orml-token pallet) as well as a configured chain extension.
 
 ## Build, test and run
