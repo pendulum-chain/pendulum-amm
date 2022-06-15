@@ -3,6 +3,8 @@
 use ink_env::Environment;
 use ink_lang as ink;
 
+extern crate alloc;
+
 pub type AssetCode = [u8; 12];
 pub type IssuerId = [u8; 32]; // encoded 32-bit array of 56 character stellar issuer (public key)
 pub type Asset = (IssuerId, AssetCode);
@@ -12,7 +14,7 @@ pub trait BalanceExtension {
 	type ErrorCode = BalanceReadErr;
 
 	#[ink(extension = 1101, returns_result = false)]
-	fn fetch_balance(owner: ink_env::AccountId, asset: Asset) -> u128;
+	fn fetch_balance(of: ink_env::AccountId, asset: Asset) -> u128;
 
 	#[ink(extension = 1102, returns_result = false, handle_status = false)]
 	fn transfer_balance(
@@ -27,6 +29,7 @@ pub trait BalanceExtension {
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub enum BalanceReadErr {
 	FailGetBalance,
+	FailTransferBalance,
 }
 
 impl ink_env::chain_extension::FromStatusCode for BalanceReadErr {
@@ -34,6 +37,7 @@ impl ink_env::chain_extension::FromStatusCode for BalanceReadErr {
 		match status_code {
 			0 => Ok(()),
 			1 => Err(Self::FailGetBalance),
+			2 => Err(Self::FailTransferBalance),
 			_ => panic!("encountered unknown status code"),
 		}
 	}
@@ -690,55 +694,136 @@ pub mod amm {
 		}
 	}
 
-	/// Unit tests.
-	#[cfg(not(feature = "ink-experimental-engine"))]
 	#[cfg(test)]
 	mod tests {
 		/// Imports all the definitions from the outer scope so we can use them here.
 		use super::*;
-
+		use ink_env::debug_println;
 		use ink_lang as ink;
+		use ink_prelude::collections::HashMap;
+		use lazy_static::lazy_static;
+		use serial_test::serial;
+		use std::sync::Mutex;
 
-		const TOKEN_0: Asset = ([0; 32], [0; 12]);
-		const TOKEN_1: Asset = ([1; 32], [1; 12]);
-
-		const TOKEN_0_STRING: &str = "EUR";
+		const ASSET_CODE_0_STRING: &str = "EUR";
 		const ISSUER_0_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
-		const TOKEN_1_STRING: &str = "USDC";
+		const ASSET_CODE_1_STRING: &str = "USDC";
 		const ISSUER_1_STRING: &str = "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF";
 
-		struct MockedExtension;
-		impl ink_env::test::ChainExtension for MockedExtension {
-			/// The static function id of the chain extension.
+		// Used for initializing account id of test account
+		// Should not be [0x01; 32] because that's the contract address
+		const TO_BYTE_ARRAY: [u8; 32] = [0x05; 32];
+
+		type BalanceMapping = HashMap<(AccountId, Asset), Balance>;
+
+		lazy_static! {
+			static ref BALANCES: Mutex<BalanceMapping> = Mutex::new(HashMap::default());
+		}
+
+		struct MockedBalanceExtension;
+		impl ink_env::test::ChainExtension for MockedBalanceExtension {
 			fn func_id(&self) -> u32 {
 				1101
 			}
 
-			/// The chain extension is called with the given input.
-			///
-			/// Returns an error code and may fill the `output` buffer with a
-			/// SCALE encoded result. The error code is taken from the
-			/// `ink_env::chain_extension::FromStatusCode` implementation for
-			/// `RandomReadErr`.
-			fn call(&mut self, _input: &[u8], output: &mut Vec<u8>) -> u32 {
-				let ret: [u8; 32] = [0; 32];
-				// let ret = 1;
-				scale::Encode::encode_to(&ret, output);
-				// println!("input: {:?}, output: {:?}", _input, output);
+			fn call(&mut self, mut _input: &[u8], output: &mut Vec<u8>) -> u32 {
+				// skip first two bytes because they don't contain input data
+				let input = &_input[2..];
+
+				let mut account_array: [u8; 32] = Default::default();
+				account_array.copy_from_slice(&input[0..32]);
+				let account_id = AccountId::from(account_array);
+
+				let mut issuer_array: [u8; 32] = Default::default();
+				issuer_array.copy_from_slice(&input[32..64]);
+
+				let mut asset_code_array: [u8; 12] = Default::default();
+				asset_code_array.copy_from_slice(&input[64..]);
+
+				let asset: Asset = (issuer_array, asset_code_array);
+
+				let map = BALANCES.lock().unwrap();
+				let balance = map.get(&(account_id, asset)).unwrap_or(&0);
+
+				scale::Encode::encode_to(&balance, output);
+
 				0 // 0 is error code
 			}
 		}
 
+		struct MockedTransferExtension;
+		impl ink_env::test::ChainExtension for MockedTransferExtension {
+			fn func_id(&self) -> u32 {
+				1102
+			}
+
+			fn call(&mut self, mut _input: &[u8], output: &mut Vec<u8>) -> u32 {
+				// skip first two bytes because they don't contain input data
+				let input = &_input[2..];
+
+				let mut from_account_array: [u8; 32] = Default::default();
+				from_account_array.copy_from_slice(&input[0..32]);
+				let from_account_id = AccountId::from(from_account_array);
+
+				let mut to_account_array: [u8; 32] = Default::default();
+				to_account_array.copy_from_slice(&input[32..64]);
+				let to_account_id = AccountId::from(to_account_array);
+
+				let mut issuer_array: [u8; 32] = Default::default();
+				issuer_array.copy_from_slice(&input[64..96]);
+
+				let mut asset_code_array: [u8; 12] = Default::default();
+				asset_code_array.copy_from_slice(&input[96..108]);
+
+				let mut amount_array: [u8; 16] = Default::default();
+				amount_array.copy_from_slice(&input[108..]);
+				let amount: u128 = u128::from_le_bytes(amount_array);
+
+				let asset: Asset = (issuer_array, asset_code_array);
+
+				// emulate transfer
+				let mut map = BALANCES.lock().unwrap();
+				map.entry((from_account_id, asset))
+					.and_modify(|e| *e = e.saturating_sub(amount))
+					.or_insert(0);
+
+				map.entry((to_account_id, asset))
+					.and_modify(|e| *e = e.saturating_add(amount))
+					.or_insert(amount);
+
+				let dispatch_result: Result<()> = Ok(());
+				scale::Encode::encode_to(&dispatch_result, output);
+
+				0 // 0 is error code
+			}
+		}
+
+		fn reset_map() {
+			let mut map = BALANCES.lock().unwrap();
+			map.clear();
+		}
+
+		fn get_default_pair() -> Pair {
+			Pair::new(
+				ASSET_CODE_0_STRING.to_string(),
+				ISSUER_0_STRING.to_string(),
+				ASSET_CODE_1_STRING.to_string(),
+				ISSUER_1_STRING.to_string(),
+			)
+		}
+
+		fn add_supply_for_account(account_id: AccountId, supply: Balance, pair: &Pair) {
+			let mut map = BALANCES.lock().unwrap();
+			map.insert((account_id, pair.asset_0), supply);
+			map.insert((account_id, pair.asset_1), supply);
+		}
+
 		/// The default constructor does its job.
 		#[ink::test]
+		#[serial]
 		fn new_works() {
 			// Constructor works.
-			let pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			let pair = get_default_pair();
 
 			let contract_balance_0 = pair.reserve_0;
 			let contract_balance_1 = pair.reserve_1;
@@ -746,70 +831,62 @@ pub mod amm {
 		}
 
 		#[ink::test]
+		#[serial]
 		fn asset_1_works() {
 			// Constructor works.
-			let pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			let pair = get_default_pair();
 
 			assert_eq!(pair.asset_1(), "EUR");
 		}
 
 		#[ink::test]
+		#[serial]
 		fn issuer_1_works() {
 			// Constructor works.
-			let pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			let pair = get_default_pair();
 
 			assert_eq!(pair.issuer_1(), "GAP4SFKVFVKENJ7B7VORAYKPB3CJIAJ2LMKDJ22ZFHIAIVYQOR6W3CXF");
 		}
 
 		#[ink::test]
+		#[serial]
 		fn balance_of_works() {
-			ink_env::test::register_chain_extension(MockedExtension);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
-			let to = AccountId::from([0x01; 32]);
-			let pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
-			println!("balance of: balance: {}", pair.balance_of(to, TOKEN_0));
-			assert_eq!(pair.balance_of(to, TOKEN_0), 0);
+			let pair = get_default_pair();
+			let to = AccountId::from(TO_BYTE_ARRAY);
+
+			println!("balance of: balance: {}", pair.balance_of(to, pair.asset_0));
+			assert_eq!(pair.balance_of(to, pair.asset_0), 0);
 		}
 
 		#[ink::test]
+		#[serial]
 		fn deposit_works_for_balanced_pair() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
+
+			let mut pair = get_default_pair();
 			let initial_supply = 1_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			add_supply_for_account(to, initial_supply, &pair);
 
 			let deposit_amount = 100;
 
-			let user_balance_0_pre_deposit = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_deposit = pair.balance_of(to, TOKEN_1);
+			let user_balance_0_pre_deposit = pair.balance_of(to, pair.asset_0);
+			let user_balance_1_pre_deposit = pair.balance_of(to, pair.asset_1);
 
-			let result = pair.deposit(deposit_amount, TOKEN_0, to);
+			let result = pair.deposit(deposit_amount, pair.asset_0, to);
 			let gained_lp = result.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
-			let user_balance_0_post_deposit = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_deposit = pair.balance_of(to, TOKEN_1);
+			let user_balance_0_post_deposit = pair.balance_of(to, pair.asset_0);
+			let user_balance_1_post_deposit = pair.balance_of(to, pair.asset_1);
 
 			let amount_0_in = user_balance_0_pre_deposit - user_balance_0_post_deposit;
 			let amount_1_in = user_balance_1_pre_deposit - user_balance_1_post_deposit;
@@ -823,37 +900,51 @@ pub mod amm {
 			let contract_balance_0_post_deposit = pair.reserve_0;
 			let contract_balance_1_post_deposit = pair.reserve_1;
 			assert_eq!(contract_balance_0_post_deposit, contract_balance_1_post_deposit);
-			assert_eq!(initial_supply + deposit_amount, contract_balance_0_post_deposit);
+			assert_eq!(deposit_amount, contract_balance_0_post_deposit);
 		}
 
 		#[ink::test]
+		#[serial]
 		fn deposit_works_for_unbalanced_pair() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
+
+			let mut pair = get_default_pair();
 			let initial_supply = 1_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			add_supply_for_account(to, initial_supply, &pair);
 
-			pair.swap_asset_2_for_asset_1(100).expect("Swap did not work");
-
+			// execute initial deposit
 			let deposit_amount = 100;
-			let user_balance_0_pre_deposit = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_deposit = pair.balance_of(to, TOKEN_1);
-
-			let result = pair.deposit(deposit_amount, TOKEN_0, to);
+			let result = pair.deposit(deposit_amount, pair.asset_0, to);
 			let gained_lp = result.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
-			let user_balance_0_post_deposit = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_deposit = pair.balance_of(to, TOKEN_1);
+			debug_println!("BALANCES pre swap: {:?}", BALANCES.lock().unwrap());
+
+			// swap to make it unbalanced
+			pair.swap_asset_2_for_asset_1(10).expect("Swap did not work");
+
+			debug_println!("BALANCES post swap: {:?}", BALANCES.lock().unwrap());
+
+			let user_balance_0_pre_deposit = pair.balance_of(to, pair.asset_0);
+			let user_balance_1_pre_deposit = pair.balance_of(to, pair.asset_1);
+
+			// deposit on unbalanced pair
+			let result = pair.deposit(deposit_amount, pair.asset_0, to);
+			let gained_lp = result.expect("Could not unwrap gained lp");
+			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
+
+			let user_balance_0_post_deposit = pair.balance_of(to, pair.asset_0);
+			let user_balance_1_post_deposit = pair.balance_of(to, pair.asset_1);
 
 			let amount_0_in = user_balance_0_pre_deposit - user_balance_0_post_deposit;
 			let amount_1_in = user_balance_1_pre_deposit - user_balance_1_post_deposit;
+
+			debug_println!("amount_0_in: {}, amount_1_in: {}", amount_0_in, amount_1_in);
 
 			assert_eq!(deposit_amount, amount_0_in);
 			// expect that amount_0_in is less than amount_1_in because
@@ -862,88 +953,88 @@ pub mod amm {
 		}
 
 		#[ink::test]
+		#[serial]
 		fn withdraw_without_lp_fails() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
+
+			let mut pair = get_default_pair();
 			let initial_supply = 1_000_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			add_supply_for_account(to, initial_supply, &pair);
 
 			let result = pair.withdraw(1, to);
 			assert_eq!(Err(Error::WithdrawWithoutSupply), result);
 
-			let gained_lp = pair.deposit(5_000, TOKEN_0, to).expect("Could not deposit");
+			let gained_lp = pair.deposit(5_000, pair.asset_0, to).expect("Could not deposit");
 			// try withdrawing more LP than account has
 			let result = pair.withdraw(gained_lp + 2, to);
 			assert_eq!(Err(Error::InsufficientLiquidityBalance), result);
 		}
 
 		#[ink::test]
+		#[serial]
 		fn withdraw_works() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
+
+			let mut pair = get_default_pair();
 			let initial_supply = 1_000_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			add_supply_for_account(to, initial_supply, &pair);
 
 			let deposit_amount = 5_000_00;
-			let result = pair.deposit(deposit_amount, TOKEN_0, to);
+			let result = pair.deposit(deposit_amount, pair.asset_0, to);
 			let gained_lp = result.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected received amount of LP to be greater than 0");
 
-			let user_balance_0_pre_withdraw = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_withdraw = pair.balance_of(to, TOKEN_1);
+			let user_balance_0_pre_withdraw = pair.balance_of(to, pair.asset_0);
+			let user_balance_1_pre_withdraw = pair.balance_of(to, pair.asset_1);
 
 			let result = pair.withdraw(gained_lp, to);
 			let (amount_0, amount_1) = result.expect("Could not unwrap result");
 			assert_eq!(true, amount_0 > 0, "Expected received amount to be greater than 0");
 			assert_eq!(true, amount_1 > 0, "Expected received amount to be greater than 0");
 
-			let user_balance_0_post_withdraw = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_withdraw = pair.balance_of(to, TOKEN_1);
+			let user_balance_0_post_withdraw = pair.balance_of(to, pair.asset_0);
+			let user_balance_1_post_withdraw = pair.balance_of(to, pair.asset_1);
 
 			assert_eq!(user_balance_0_post_withdraw, user_balance_0_pre_withdraw + amount_0);
 			assert_eq!(user_balance_1_post_withdraw, user_balance_1_pre_withdraw + amount_1);
 		}
 
 		#[ink::test]
+		#[serial]
 		fn deposit_and_withdraw_work() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
+
+			let mut pair = get_default_pair();
 			let initial_supply = 1_000_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			add_supply_for_account(to, initial_supply, &pair);
 
 			let deposit_amount = 5_000_00;
 			// do initial deposit which initiates total_supply
-			pair.deposit(deposit_amount, TOKEN_0, to).expect("Could not deposit");
+			pair.deposit(deposit_amount, pair.asset_0, to).expect("Could not deposit");
 
 			// do second deposit
-			let result = pair.deposit(deposit_amount, TOKEN_0, to);
+			let result = pair.deposit(deposit_amount, pair.asset_0, to);
 			let gained_lp = result.expect("Could not unwrap gained lp");
 
 			assert_eq!(gained_lp > 0, true, "Expected received amount of LP to be greater than 0");
 
 			let result = pair.withdraw(gained_lp, to);
 			let (amount_0, amount_1) = result.expect("Could not unwrap result");
-
-			let user_balance_0_post_withdraw = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_withdraw = pair.balance_of(to, TOKEN_1);
 			assert_eq!(
 				amount_0, deposit_amount,
 				"Expected withdrawn amount to be equal to deposited amount"
@@ -955,116 +1046,73 @@ pub mod amm {
 		}
 
 		#[ink::test]
+		#[serial]
 		fn swap_works_with_small_amount() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
+
+			let mut pair = get_default_pair();
 			let initial_supply = 1_000_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			add_supply_for_account(to, initial_supply, &pair);
 
-			let gained_lp = pair.deposit(5, TOKEN_0, to);
+			let gained_lp = pair.deposit(500, pair.asset_0, to);
 			let gained_lp = gained_lp.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
 			let swap_amount = 100;
-			let rate: f64 =
-				pair.reserve_0 as f64 / ((pair.reserve_1 as f64) - (swap_amount as f64));
-			println!("Expected float conversion rate: {}", rate);
-			let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
-			println!("Balances pre swap: {}, {}", user_balance_0_pre_swap, user_balance_1_pre_swap);
+			let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
 
 			let result = pair.swap_asset_2_for_asset_1(swap_amount);
 			result.expect("Encountered error in swap");
-			let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
-			assert_eq!(user_balance_0_post_swap, user_balance_0_pre_swap + swap_amount);
-			assert_eq!(
-				user_balance_1_post_swap,
-				((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
-			);
 
-			let rate: f64 =
-				pair.reserve_1 as f64 / ((pair.reserve_0 as f64) - (swap_amount as f64));
-			println!("Expected exact float conversion rate: {}", rate);
-			let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
-			println!("Balances pre swap: {}, {}", user_balance_0_pre_swap, user_balance_1_pre_swap);
+			let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
+			assert_eq!(user_balance_0_post_swap, user_balance_0_pre_swap + swap_amount);
+
+			let user_balance_1_pre_swap = pair.balance_of(to, pair.asset_1);
 
 			let result = pair.swap_asset_1_for_asset_2(swap_amount);
 			result.expect("Encountered error in swap");
 
-			let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
-			println!(
-				"Balances post swap: {}, {}",
-				user_balance_0_post_swap, user_balance_1_post_swap
-			);
-			assert_eq!(
-				user_balance_0_post_swap,
-				((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
-			);
+			let user_balance_1_post_swap = pair.balance_of(to, pair.asset_1);
 			assert_eq!(user_balance_1_post_swap, user_balance_1_pre_swap + swap_amount);
 		}
 
 		#[ink::test]
+		#[serial]
 		fn swap_works_with_large_amount() {
-			ink_env::test::register_chain_extension(MockedExtension);
-			let to = AccountId::from([0x01; 32]);
+			reset_map();
+			ink_env::test::register_chain_extension(MockedBalanceExtension);
+			ink_env::test::register_chain_extension(MockedTransferExtension);
 
-			let initial_supply = 1_000_000;
-			let mut pair = Pair::new(
-				TOKEN_0_STRING.to_string(),
-				ISSUER_0_STRING.to_string(),
-				TOKEN_1_STRING.to_string(),
-				ISSUER_1_STRING.to_string(),
-			);
+			let to = AccountId::from(TO_BYTE_ARRAY);
+			ink_env::test::set_caller::<ink_env::DefaultEnvironment>(to);
 
-			let gained_lp = pair.deposit(5, TOKEN_0, to);
+			let mut pair = get_default_pair();
+			let initial_supply = 10_000_000;
+			add_supply_for_account(to, initial_supply, &pair);
+
+			let gained_lp = pair.deposit(1_000_000, pair.asset_0, to);
 			let gained_lp = gained_lp.expect("Could not unwrap gained lp");
 			assert_eq!(gained_lp > 0, true, "Expected lp to be greater than 0");
 
 			let swap_amount = 200_000;
-			let rate: f64 =
-				pair.reserve_0 as f64 / ((pair.reserve_1 as f64) - (swap_amount as f64));
-			println!("Expected float conversion rate: {}", rate);
-			let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
-			println!("Balances pre swap: {}, {}", user_balance_0_pre_swap, user_balance_1_pre_swap);
+			let user_balance_0_pre_swap = pair.balance_of(to, pair.asset_0);
 
 			let result = pair.swap_asset_2_for_asset_1(swap_amount);
 			result.expect("Encountered error in swap");
-			let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
+
+			let user_balance_0_post_swap = pair.balance_of(to, pair.asset_0);
 			assert_eq!(user_balance_0_post_swap, user_balance_0_pre_swap + swap_amount);
-			println!(
-				"Expected without round {}",
-				((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate)
-			);
-			assert_eq!(
-				user_balance_1_post_swap,
-				((user_balance_1_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
-			);
+			let user_balance_1_pre_swap = pair.balance_of(to, pair.asset_1);
 
-			let rate: f64 =
-				pair.reserve_1 as f64 / ((pair.reserve_0 as f64) - (swap_amount as f64));
-			println!("Expected exact float conversion rate: {}", rate);
-			let user_balance_0_pre_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_pre_swap = pair.balance_of(to, TOKEN_1);
-			println!("Balances pre swap: {}, {}", user_balance_0_pre_swap, user_balance_1_pre_swap);
-			let result = pair.swap_asset_2_for_asset_1(swap_amount);
+			let result = pair.swap_asset_1_for_asset_2(swap_amount);
 			result.expect("Encountered error in swap");
-			let user_balance_0_post_swap = pair.balance_of(to, TOKEN_0);
-			let user_balance_1_post_swap = pair.balance_of(to, TOKEN_1);
-			assert_eq!(
-				user_balance_0_post_swap,
-				((user_balance_0_pre_swap as f64) - (swap_amount as f64) * rate).round() as u128
-			);
+
+			let user_balance_1_post_swap = pair.balance_of(to, pair.asset_1);
 			assert_eq!(user_balance_1_post_swap, user_balance_1_pre_swap + swap_amount);
 		}
 	}
