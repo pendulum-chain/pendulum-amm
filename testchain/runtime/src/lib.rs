@@ -31,6 +31,8 @@ use sp_std::{fmt, prelude::*};
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
+use pallet_pendulum_amm::AmmExtension;
+
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
 	construct_runtime,
@@ -255,6 +257,40 @@ impl pallet_timestamp::Config for Runtime {
 }
 
 parameter_types! {
+	pub StellarUsdcAsset: CurrencyId = CurrencyId::try_from((
+		"USDC",
+		[
+			20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16, 50, 30, 226, 102, 231, 46,
+			199, 108, 171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
+		],
+	))
+	.unwrap();
+
+	pub StellarEurAsset: CurrencyId = CurrencyId::try_from((
+		"EUR",
+		[
+			20, 209, 150, 49, 176, 55, 23, 217, 171, 154, 54, 110, 16, 50, 30, 226, 102, 231, 46,
+			199, 108, 171, 97, 144, 240, 161, 51, 109, 72, 34, 159, 139,
+		],
+	))
+	.unwrap();
+}
+
+impl pallet_pendulum_amm::Config for Runtime {
+	type Event = Event;
+	type WeightInfo = pallet_pendulum_amm::weights::WeightInfo<Runtime>;
+	type Balance = Balance;
+	type CurrencyId = CurrencyId;
+	type AmmExtension = Extension;
+	type MinimumLiquidity = ConstU128<1000>;
+
+	type MintFee = ConstU128<5>;
+	type BaseFee = ConstU128<3>;
+	type Asset0 = StellarEurAsset;
+	type Asset1 = StellarUsdcAsset;
+}
+
+parameter_types! {
 	pub const ExistentialDeposit: u128 = EXISTENTIAL_DEPOSIT;
 	pub const MaxLocks: u32 = 50;
 }
@@ -406,7 +442,7 @@ parameter_types! {
 			<Runtime as pallet_contracts::Config>::WeightInfo::on_initialize_per_queue_item(0)
 		)) / 5) as u32;
 	pub Schedule: pallet_contracts::Schedule<Runtime> = {
-		let mut schedule = pallet_contracts::Schedule::<Runtime>::default();
+		let schedule = pallet_contracts::Schedule::<Runtime>::default();
 		// We decided to **temporarily* increase the default allowed contract size here
 		// (the default is `128 * 1024`).
 		//
@@ -421,12 +457,33 @@ parameter_types! {
 	};
 }
 
-//--------------------- Chain Extension --------------------------
+//--------------------- AMM Balance Extension --------------------------
+pub struct Extension;
+
+impl AmmExtension<AccountId, CurrencyId, Balance, u64> for Extension {
+	fn fetch_balance(owner: &AccountId, asset: CurrencyId) -> Balance {
+		<Tokens as MultiCurrency<AccountId>>::total_balance(asset, owner)
+	}
+
+	fn transfer_balance(
+		from: &AccountId,
+		to: &AccountId,
+		asset: CurrencyId,
+		amount: Balance,
+	) -> sp_runtime::DispatchResult {
+		<Currencies as MultiCurrency<AccountId>>::transfer(asset, from, to, amount)
+	}
+
+	fn moment_to_balance_type(moment: u64) -> Balance {
+		Balance::from(moment)
+	}
+}
+
 pub struct BalanceChainExtension;
 use sp_runtime::DispatchError;
 
 use core::convert::TryFrom;
-use frame_support::traits::Contains;
+use frame_support::traits::{ConstU128, Contains};
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_std::str;
@@ -594,7 +651,8 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		Contracts: pallet_contracts,
 		Currencies: orml_currencies,
-		Tokens: orml_tokens exclude_parts { Call }
+		Tokens: orml_tokens exclude_parts { Call },
+		AmmEURUSDC: pallet_pendulum_amm
 	}
 );
 
@@ -737,6 +795,7 @@ impl_runtime_apis! {
 			list_benchmark!(list, extra, frame_system, SystemBench::<Runtime>);
 			list_benchmark!(list, extra, pallet_balances, Balances);
 			list_benchmark!(list, extra, pallet_timestamp, Timestamp);
+			list_benchmark!(list, extra, pallet_pendulum_amm, AmmEURUSDC);
 
 			let storage_info = AllPalletsWithSystem::storage_info();
 
@@ -774,6 +833,7 @@ impl_runtime_apis! {
 			add_benchmark!(params, batches, frame_system, SystemBench::<Runtime>);
 			add_benchmark!(params, batches, pallet_balances, Balances);
 			add_benchmark!(params, batches, pallet_timestamp, Timestamp);
+			add_benchmark!(params, batches, pallet_pendulum_amm, AmmEURUSDC);
 
 			Ok(batches)
 		}

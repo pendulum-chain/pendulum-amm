@@ -1,10 +1,10 @@
-use test_node_runtime::{
-	AccountId, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig, SystemConfig,
-	TokensConfig, WASM_BINARY,
-};
 use sc_service::ChainType;
 use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
+use test_node_runtime::{
+	AccountId, AmmEURUSDCConfig, BalancesConfig, CurrencyId, GenesisConfig, Signature, SudoConfig,
+	SystemConfig, TokensConfig, WASM_BINARY,
+};
 
 // The URL for the telemetry server.
 // const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
@@ -168,11 +168,17 @@ fn testnet_genesis(
 				.iter()
 				.flat_map(|x| {
 					vec![
-						(x.clone(), stellar_usdc_asset, 10u128.pow(12)),
-						(x.clone(), stellar_eur_asset, 10u128.pow(12)),
+						(x.clone(), stellar_usdc_asset, 1000u128.pow(12)),
+						(x.clone(), stellar_eur_asset, 1000u128.pow(12)),
 					]
 				})
 				.collect(),
+		},
+
+		amm_eurusdc: AmmEURUSDCConfig {
+			contract_id: Some(get_account_id_from_seed::<sr25519::Public>("Contract")),
+			zero_account: Some(get_account_id_from_seed::<sr25519::Public>("Zero")),
+			fee_to_setter: Some(get_account_id_from_seed::<sr25519::Public>("Alice")),
 		},
 	}
 }

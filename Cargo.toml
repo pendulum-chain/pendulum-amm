@@ -3,6 +3,7 @@ members = [
   "testchain/node",
   "testchain/runtime",
   "smart_contract",
+  "pallet"
 ]
 
 [profile.release]
