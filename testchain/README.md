@@ -14,5 +14,5 @@ or
 ```
 cargo run --release -- --dev
 ```
-4. Use [Polkadot's app](https://polkadot.js.org/apps/#/) to check the running chain.
-5. Go to **DEVELOPMENT**, and make sure that the _**Local Node**_ is set to `127.0.0.0.1:9944`
+4. Use the [polkadot explorer](https://polkadot.js.org/apps/#/) to check the running chain.
+5. Open the left side-bar for node selection, unfold the **DEVELOPMENT** section, and make sure that the _**Local Node**_ is set to `127.0.0.1:9944`.

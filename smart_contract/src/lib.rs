@@ -1192,6 +1192,8 @@ pub mod amm {
 			let amount_0_in = user_balance_0_pre_deposit - user_balance_0_post_deposit;
 			let amount_1_in = user_balance_1_pre_deposit - user_balance_1_post_deposit;
 
+			debug_println!("amount_0_in: {}, amount_1_in: {}", amount_0_in, amount_1_in);
+
 			assert_eq!(deposit_amount, amount_0_in);
 			// expect that amount_0_in is less than amount_1_in because
 			// the pair has a ratio of 900:1111 after the swap thus TOKEN_0 is more valuable
