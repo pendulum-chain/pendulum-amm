@@ -64,10 +64,10 @@ fn balance_of_works() {
 fn deposit_works_for_balanced_pair() {
 	new_test_ext().execute_with(|| {
 		let to = 2;
-		let initial_supply = 1_000;
+		let initial_supply = 100_000;
 		add_supply_for_account(to, initial_supply);
 
-		let deposit_amount = 100;
+		let deposit_amount = 10_000;
 		let user_balance_0_pre_deposit = balance_of::<Test>(&to, ASSET_0);
 		let user_balance_1_pre_deposit = balance_of::<Test>(&to, ASSET_1);
 
@@ -96,11 +96,11 @@ fn deposit_works_for_balanced_pair() {
 fn deposit_works_for_unbalanced_pair() {
 	new_test_ext().execute_with(|| {
 		let to = 2;
-		let initial_supply = 1_000;
+		let initial_supply = 100_000;
 		add_supply_for_account(to, initial_supply);
 
 		// execute initial deposit
-		let deposit_amount = 100;
+		let deposit_amount = 10_000;
 		Amm::deposit_asset_1(Origin::signed(to), deposit_amount).expect("deposit should work");
 
 		// swap to make it unbalanced
@@ -244,7 +244,7 @@ fn deposit_and_withdraw_work() {
 #[test]
 fn swap_works_with_small_amount() {
 	new_test_ext().execute_with(|| {
-		swap_test(2, 1_000_000, 500, 100);
+		swap_test(2, 1_000_000, 5000, 100);
 	})
 }
 
