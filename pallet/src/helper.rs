@@ -379,11 +379,10 @@ pub fn _get_amount_out<T: Config>(
 		let sub_fee = T::Balance::from(997u32);
 		amount_in.saturating_mul(sub_fee)
 	};
+	let multiplier_1000 = T::Balance::from(1000u32);
 
 	let numerator = amount_in_with_fee.saturating_mul(reserve_out);
-	let denominator = reserve_in
-		.saturating_mul(T::MinimumLiquidity::get())
-		.saturating_add(amount_in_with_fee);
+	let denominator = reserve_in.saturating_mul(multiplier_1000).saturating_add(amount_in_with_fee);
 
 	Ok(numerator.checked_div(&denominator).unwrap_or(T::Balance::zero()))
 }
@@ -404,10 +403,11 @@ pub fn get_amount_in<T: Config>(
 	}
 
 	let sub_fee = T::Balance::from(997u32);
+	let multiplier_1000 = T::Balance::from(1000u32);
 
 	let numerator = reserve_in
 		.saturating_mul(reserve_out)
-		.saturating_mul(T::MinimumLiquidity::get());
+		.saturating_mul(multiplier_1000);
 	let denominator = reserve_out.saturating_sub(amount_out).saturating_mul(sub_fee);
 
 	Ok(numerator
