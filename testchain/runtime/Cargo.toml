@@ -17,8 +17,6 @@ serde = {version = '1.0.100', default-features = false, features = ['derive']}
 codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "max-encoded-len"] }
 scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
 
-pallet-utility = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-utility", default-features = false }
-
 pallet-authorship = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-authorship", default-features = false }
 pallet-balances = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-balances", default-features = false }
 frame-support = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "frame-support", default-features = false }
@@ -60,10 +58,6 @@ orml-tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-li
 orml-traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library", branch = "polkadot-v0.9.24", default-features = false }
 
 pallet-pendulum-amm = { path = "../../pallet", default-features = false }
-
-pallet-proxy = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-proxy", default-features = false }
-#pallet-proxy = { path="../../proxy", default-features = false}
-
 [build-dependencies]
 substrate-wasm-builder =  {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "substrate-wasm-builder" }
 
@@ -105,9 +99,7 @@ std = [
 	"orml-currencies/std",
 	"orml-traits/std",
 
-	"pallet-pendulum-amm/std",
-	"pallet-proxy/std",
-	"pallet-utility/std"
+	"pallet-pendulum-amm/std"
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

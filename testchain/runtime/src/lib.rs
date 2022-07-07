@@ -500,7 +500,7 @@ pub struct BalanceChainExtension;
 use sp_runtime::DispatchError;
 
 use core::convert::TryFrom;
-use frame_support::traits::{ConstU128, Contains, InstanceFilter};
+use frame_support::traits::{ConstU128, Contains};
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_std::str;
@@ -651,73 +651,6 @@ impl OnRuntimeUpgrade for Migrations {
 		migration::migrate::<Runtime>()
 	}
 }
-
-parameter_types! {
-	pub const ProxyDepositBase: Balance = 1;
-	pub const ProxyDepositFactor: Balance = 1;
-	pub const MaxProxies: u16 = 32;
-	pub const AnnouncementDepositBase: Balance = 1;
-	pub const AnnouncementDepositFactor: Balance = 1;
-	pub const MaxPending: u16 = 32;
-}
-
-#[derive(
-	Copy,
-	Clone,
-	Eq,
-	PartialEq,
-	Ord,
-	PartialOrd,
-	TypeInfo,
-	Encode,
-	Decode,
-	MaxEncodedLen,
-	RuntimeDebug,
-)]
-pub enum ProxyType {
-	Any,
-	JustTransfer,
-}
-impl Default for ProxyType {
-	fn default() -> Self {
-		Self::Any
-	}
-}
-impl InstanceFilter<Call> for ProxyType {
-	fn filter(&self, c: &Call) -> bool {
-		match self {
-			ProxyType::Any => true,
-			ProxyType::JustTransfer => {
-				matches!(c, Call::Balances(pallet_balances::Call::transfer { .. }))
-			},
-		}
-	}
-	fn is_superset(&self, o: &Self) -> bool {
-		self == &ProxyType::Any || self == o
-	}
-}
-
-impl pallet_proxy::Config for Runtime {
-	type Event = Event;
-	type Call = Call;
-	type Currency = Balances;
-	type ProxyType = ProxyType;
-	type ProxyDepositBase = ProxyDepositBase;
-	type ProxyDepositFactor = ProxyDepositFactor;
-	type MaxProxies = MaxProxies;
-	type WeightInfo = pallet_proxy::weights::SubstrateWeight<Runtime>;
-	type MaxPending = MaxPending;
-	type CallHasher = BlakeTwo256;
-	type AnnouncementDepositBase = AnnouncementDepositBase;
-	type AnnouncementDepositFactor = AnnouncementDepositFactor;
-}
-
-// impl pallet_utility::Config for Test {
-// 	type Event = Event;
-// 	type Call = Call;
-// 	type PalletsOrigin = OriginCaller;
-// 	type WeightInfo = ();
-// }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
