@@ -1,10 +1,14 @@
 use crate::{
 	chain_spec,
 	cli::{Cli, Subcommand},
+	command_helper::{inherent_benchmark_data, BenchmarkExtrinsicBuilder},
 	service,
+	service::ExecutorDispatch,
 };
+use frame_benchmarking_cli::{BenchmarkCmd, SUBSTRATE_REFERENCE_HARDWARE};
 use sc_cli::{ChainSpec, RuntimeVersion, SubstrateCli};
 use sc_service::PartialComponents;
+use std::sync::Arc;
 use test_node_runtime::Block;
 
 impl SubstrateCli for Cli {
@@ -25,7 +29,7 @@ impl SubstrateCli for Cli {
 	}
 
 	fn support_url() -> String {
-		"https://github.com/paritytech/canvas-node/issues/new".into()
+		"https://github.com/paritytech/substrate-contracts-node/issues/new".into()
 	}
 
 	fn copyright_start_year() -> i32 {
@@ -34,8 +38,8 @@ impl SubstrateCli for Cli {
 
 	fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
 		Ok(match id {
-			"dev" => Box::new(chain_spec::development_config()?),
-			"" | "local" => Box::new(chain_spec::local_testnet_config()?),
+			"" | "dev" => Box::new(chain_spec::development_config()?),
+			"local" => Box::new(chain_spec::local_testnet_config()?),
 			path =>
 				Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?),
 		})
@@ -95,19 +99,50 @@ pub fn run() -> sc_cli::Result<()> {
 			runner.async_run(|config| {
 				let PartialComponents { client, task_manager, backend, .. } =
 					service::new_partial(&config)?;
-				Ok((cmd.run(client, backend), task_manager))
+				Ok((cmd.run(client, backend, None), task_manager))
 			})
 		},
-		Some(Subcommand::Benchmark(cmd)) =>
-			if cfg!(feature = "runtime-benchmarks") {
-				let runner = cli.create_runner(cmd)?;
+		Some(Subcommand::Benchmark(cmd)) => {
+			let runner = cli.create_runner(cmd)?;
 
-				runner.sync_run(|config| cmd.run::<Block, service::ExecutorDispatch>(config))
-			} else {
-				Err("Benchmarking wasn't enabled when building the node. You can enable it with \
-				     `--features runtime-benchmarks`."
-					.into())
-			},
+			runner.sync_run(|config| {
+				// This switch needs to be in the client, since the client decides
+				// which sub-commands it wants to support.
+				// In the case of substrate-contract-node we only support benchmark for pallet
+				match cmd {
+					BenchmarkCmd::Pallet(cmd) => {
+						if !cfg!(feature = "runtime-benchmarks") {
+							return Err(
+								"Runtime benchmarking wasn't enabled when building the node. \
+							You can enable it with `--features runtime-benchmarks`."
+									.into(),
+							)
+						}
+
+						cmd.run::<Block, ExecutorDispatch>(config)
+					},
+					BenchmarkCmd::Block(cmd) => {
+						let PartialComponents { client, .. } = service::new_partial(&config)?;
+						cmd.run(client)
+					},
+					BenchmarkCmd::Storage(cmd) => {
+						let PartialComponents { client, backend, .. } =
+							service::new_partial(&config)?;
+						let db = backend.expose_db();
+						let storage = backend.expose_storage();
+						cmd.run(config, client, db, storage)
+					},
+					BenchmarkCmd::Overhead(cmd) => {
+						let PartialComponents { client, .. } = service::new_partial(&config)?;
+						let ext_builder = BenchmarkExtrinsicBuilder::new(client.clone());
+
+						cmd.run(config, client, inherent_benchmark_data()?, Arc::new(ext_builder))
+					},
+					BenchmarkCmd::Machine(cmd) =>
+						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone()),
+				}
+			})
+		},
 		#[cfg(feature = "try-runtime")]
 		Some(Subcommand::TryRuntime(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
@@ -125,6 +160,10 @@ pub fn run() -> sc_cli::Result<()> {
 		Some(Subcommand::TryRuntime) => Err("TryRuntime wasn't enabled when building the node. \
 				You can enable it with `--features try-runtime`."
 			.into()),
+		Some(Subcommand::ChainInfo(cmd)) => {
+			let runner = cli.create_runner(cmd)?;
+			runner.sync_run(|config| cmd.run::<Block>(&config))
+		},
 		None => {
 			let runner = cli.create_runner(&cli.run)?;
 			runner.run_node_until_exit(|config| async move {

@@ -17,50 +17,55 @@ serde = {version = '1.0.100', default-features = false, features = ['derive']}
 codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "max-encoded-len"] }
 scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
 
-pallet-authorship = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-authorship", default-features = false }
-pallet-balances = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-balances", default-features = false }
-frame-support = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "frame-support", default-features = false }
-pallet-randomness-collective-flip = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-randomness-collective-flip", default-features = false }
-pallet-sudo = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-sudo", default-features = false }
-frame-system = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "frame-system", default-features = false }
-frame-try-runtime = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "frame-try-runtime", default-features = false, optional = true }
-pallet-timestamp = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-timestamp", default-features = false }
-pallet-transaction-payment = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-transaction-payment", default-features = false }
-frame-executive = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "frame-executive", default-features = false }
-sp-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-api", default-features = false }
-sp-block-builder = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-block-builder", default-features = false }
-sp-core = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-core", default-features = false }
-sp-inherents = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-inherents", default-features = false }
-sp-offchain = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-offchain", default-features = false }
-sp-runtime = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-runtime", default-features = false }
-sp-session = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-session", default-features = false }
-sp-std = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-std", default-features = false }
-sp-transaction-pool = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-transaction-pool", default-features = false }
-sp-version = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "sp-version", default-features = false }
+pallet-utility = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-utility", default-features = false }
+
+pallet-authorship = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-authorship", default-features = false }
+pallet-balances = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-balances", default-features = false }
+frame-support = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "frame-support", default-features = false }
+pallet-randomness-collective-flip = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-randomness-collective-flip", default-features = false }
+pallet-sudo = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-sudo", default-features = false }
+frame-system = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "frame-system", default-features = false }
+frame-try-runtime = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "frame-try-runtime", default-features = false, optional = true }
+pallet-timestamp = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-timestamp", default-features = false }
+pallet-transaction-payment = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-transaction-payment", default-features = false }
+frame-executive = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "frame-executive", default-features = false }
+sp-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-api", default-features = false }
+sp-block-builder = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-block-builder", default-features = false }
+sp-core = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-core", default-features = false }
+sp-inherents = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-inherents", default-features = false }
+sp-offchain = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-offchain", default-features = false }
+sp-runtime = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-runtime", default-features = false }
+sp-session = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-session", default-features = false }
+sp-std = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-std", default-features = false }
+sp-transaction-pool = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-transaction-pool", default-features = false }
+sp-version = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "sp-version", default-features = false }
 
 # Used for the node's RPCs
-frame-system-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "frame-system-rpc-runtime-api", default-features = false }
-pallet-transaction-payment-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-transaction-payment-rpc-runtime-api", default-features = false }
+frame-system-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "frame-system-rpc-runtime-api", default-features = false }
+pallet-transaction-payment-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-transaction-payment-rpc-runtime-api", default-features = false }
 
 # Used for runtime benchmarking
-frame-benchmarking = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", default-features = false, package = "frame-benchmarking", optional = true }
-frame-system-benchmarking = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", default-features = false, package = "frame-system-benchmarking", optional = true }
+frame-benchmarking = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", default-features = false, package = "frame-benchmarking", optional = true }
+frame-system-benchmarking = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", default-features = false, package = "frame-system-benchmarking", optional = true }
 hex-literal = { version = "0.3.4", optional = true }
 
 # Contracts specific packages
-pallet-contracts = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-contracts", default-features = false }
-pallet-contracts-primitives = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-contracts-primitives", default-features = false }
-pallet-contracts-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "pallet-contracts-rpc-runtime-api", default-features = false }
+pallet-contracts = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-contracts", default-features = false }
+pallet-contracts-primitives = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-contracts-primitives", default-features = false }
+pallet-contracts-rpc-runtime-api = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-contracts-rpc-runtime-api", default-features = false }
 
 # Orml dependencies
-orml-currencies = {git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false}
-orml-tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false }
-orml-traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library", rev = "2b5d4ce1d08fb54c0007c2055653892d2c93a92e", default-features = false }
+orml-currencies = {git = "https://github.com/open-web3-stack/open-runtime-module-library", branch = "polkadot-v0.9.24", default-features = false}
+orml-tokens = { git = "https://github.com/open-web3-stack/open-runtime-module-library", branch = "polkadot-v0.9.24", default-features = false }
+orml-traits = { git = "https://github.com/open-web3-stack/open-runtime-module-library", branch = "polkadot-v0.9.24", default-features = false }
 
 pallet-pendulum-amm = { path = "../../pallet", default-features = false }
 
+pallet-proxy = {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "pallet-proxy", default-features = false }
+#pallet-proxy = { path="../../proxy", default-features = false}
+
 [build-dependencies]
-substrate-wasm-builder =  {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.18", package = "substrate-wasm-builder" }
+substrate-wasm-builder =  {  git = "https://github.com/paritytech/substrate",  branch = "polkadot-v0.9.24", package = "substrate-wasm-builder" }
 
 [features]
 default = [
@@ -100,7 +105,9 @@ std = [
 	"orml-currencies/std",
 	"orml-traits/std",
 
-	"pallet-pendulum-amm/std"
+	"pallet-pendulum-amm/std",
+	"pallet-proxy/std",
+	"pallet-utility/std"
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

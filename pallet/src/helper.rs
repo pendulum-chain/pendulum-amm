@@ -405,11 +405,10 @@ pub fn get_amount_in<T: Config>(
 	let sub_fee = T::Balance::from(997u32);
 	let multiplier_1000 = T::Balance::from(1000u32);
 
-	let numerator = reserve_in
-		.saturating_mul(reserve_out)
-		.saturating_mul(multiplier_1000);
+	let numerator = reserve_in.saturating_mul(reserve_out).saturating_mul(multiplier_1000);
 	let denominator = reserve_out.saturating_sub(amount_out).saturating_mul(sub_fee);
 
+	//todo: this must be saturating_div
 	Ok(numerator
 		.checked_div(&denominator)
 		.map(|res| res.saturating_add(T::Balance::one()))

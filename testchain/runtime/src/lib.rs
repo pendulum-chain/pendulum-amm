@@ -15,6 +15,7 @@ use pallet_contracts::{
 	},
 	migration,
 	weights::WeightInfo,
+	DefaultContractAccessWeight,
 };
 
 use sp_api::impl_runtime_apis;
@@ -43,7 +44,7 @@ pub use frame_support::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
 		IdentityFee, Weight,
 	},
-	StorageValue,
+	RuntimeDebug, StorageValue,
 };
 pub use frame_system::Call as SystemCall;
 pub use pallet_balances::Call as BalancesCall;
@@ -177,11 +178,25 @@ parameter_types! {
 	pub const SS58Prefix: u8 = 42;
 }
 
+/// We currently allow all calls.
+pub struct BaseFilter;
+impl Contains<Call> for BaseFilter {
+	fn contains(c: &Call) -> bool {
+		match *c {
+			// Remark is used as a no-op call in the benchmarking
+			Call::System(SystemCall::remark { .. }) => true,
+			Call::System(_) => false,
+			_ => true,
+		}
+	}
+}
+
 // Configure FRAME pallets to include in runtime.
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = frame_support::traits::Everything;
+	type BaseCallFilter = BaseFilter;
+	// type BaseCallFilter = frame_support::traits::Everything;
 	/// Block & extrinsics weights: base values and limits.
 	type BlockWeights = RuntimeBlockWeights;
 	/// The maximum length of a block (in bytes).
@@ -316,10 +331,10 @@ parameter_types! {
 
 impl pallet_transaction_payment::Config for Runtime {
 	type OnChargeTransaction = CurrencyAdapter<Balances, ()>;
-	type TransactionByteFee = TransactionByteFee;
+	// type TransactionByteFee = TransactionByteFee;
 	type OperationalFeeMultiplier = OperationalFeeMultiplier;
 	type WeightToFee = IdentityFee<Balance>;
-	// type LengthToFee = IdentityFee<Balance>;
+	type LengthToFee = IdentityFee<Balance>;
 	type FeeMultiplierUpdate = ();
 }
 
@@ -406,9 +421,11 @@ impl orml_tokens::Config for Runtime {
 	type WeightInfo = ();
 	type ExistentialDeposits = ExistentialDeposits;
 	type OnDust = ();
+	type OnNewTokenAccount = ();
+	type OnKilledTokenAccount = ();
 	type MaxLocks = MaxLocks;
-	// type MaxReserves = MaxReserves;
-	// type ReserveIdentifier = ();
+	type MaxReserves = MaxLocks;
+	type ReserveIdentifier = [u8; 8];
 	type DustRemovalWhitelist = DustRemovalWhitelist;
 }
 
@@ -417,7 +434,7 @@ parameter_types! {
 }
 
 impl orml_currencies::Config for Runtime {
-	type Event = Event;
+	// type Event = Event;
 	type MultiCurrency = Tokens;
 	type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances, Amount, BlockNumber>;
 	type GetNativeCurrencyId = GetNativeCurrencyId;
@@ -483,7 +500,7 @@ pub struct BalanceChainExtension;
 use sp_runtime::DispatchError;
 
 use core::convert::TryFrom;
-use frame_support::traits::{ConstU128, Contains};
+use frame_support::traits::{ConstU128, Contains, InstanceFilter};
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_std::str;
@@ -622,10 +639,10 @@ impl pallet_contracts::Config for Runtime {
 	type Schedule = Schedule;
 	type CallStack = [pallet_contracts::Frame<Self>; 31];
 	type AddressGenerator = pallet_contracts::DefaultAddressGenerator;
-	// type ContractAccessWeight = DefaultContractAccessWeight<RuntimeBlockWeights>;
-	//
-	// type MaxCodeLen = ConstU32<{ 128 * 1024 }>;
-	// type RelaxedMaxCodeLen = ConstU32<{ 256 * 1024 }>;
+	type ContractAccessWeight = DefaultContractAccessWeight<RuntimeBlockWeights>;
+
+	type MaxCodeLen = ConstU32<{ 128 * 1024 }>;
+	type RelaxedMaxCodeLen = ConstU32<{ 256 * 1024 }>;
 }
 
 pub struct Migrations;
@@ -634,6 +651,73 @@ impl OnRuntimeUpgrade for Migrations {
 		migration::migrate::<Runtime>()
 	}
 }
+
+parameter_types! {
+	pub const ProxyDepositBase: Balance = 1;
+	pub const ProxyDepositFactor: Balance = 1;
+	pub const MaxProxies: u16 = 32;
+	pub const AnnouncementDepositBase: Balance = 1;
+	pub const AnnouncementDepositFactor: Balance = 1;
+	pub const MaxPending: u16 = 32;
+}
+
+#[derive(
+	Copy,
+	Clone,
+	Eq,
+	PartialEq,
+	Ord,
+	PartialOrd,
+	TypeInfo,
+	Encode,
+	Decode,
+	MaxEncodedLen,
+	RuntimeDebug,
+)]
+pub enum ProxyType {
+	Any,
+	JustTransfer,
+}
+impl Default for ProxyType {
+	fn default() -> Self {
+		Self::Any
+	}
+}
+impl InstanceFilter<Call> for ProxyType {
+	fn filter(&self, c: &Call) -> bool {
+		match self {
+			ProxyType::Any => true,
+			ProxyType::JustTransfer => {
+				matches!(c, Call::Balances(pallet_balances::Call::transfer { .. }))
+			},
+		}
+	}
+	fn is_superset(&self, o: &Self) -> bool {
+		self == &ProxyType::Any || self == o
+	}
+}
+
+impl pallet_proxy::Config for Runtime {
+	type Event = Event;
+	type Call = Call;
+	type Currency = Balances;
+	type ProxyType = ProxyType;
+	type ProxyDepositBase = ProxyDepositBase;
+	type ProxyDepositFactor = ProxyDepositFactor;
+	type MaxProxies = MaxProxies;
+	type WeightInfo = pallet_proxy::weights::SubstrateWeight<Runtime>;
+	type MaxPending = MaxPending;
+	type CallHasher = BlakeTwo256;
+	type AnnouncementDepositBase = AnnouncementDepositBase;
+	type AnnouncementDepositFactor = AnnouncementDepositFactor;
+}
+
+// impl pallet_utility::Config for Test {
+// 	type Event = Event;
+// 	type Call = Call;
+// 	type PalletsOrigin = OriginCaller;
+// 	type WeightInfo = ();
+// }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
@@ -652,7 +736,9 @@ construct_runtime!(
 		Contracts: pallet_contracts,
 		Currencies: orml_currencies,
 		Tokens: orml_tokens exclude_parts { Call },
-		AmmEURUSDC: pallet_pendulum_amm
+		AmmEURUSDC: pallet_pendulum_amm,
+		Proxy: pallet_proxy,
+		// Utility: pallet_utility::{Pallet, Call, Event},
 	}
 );
 
