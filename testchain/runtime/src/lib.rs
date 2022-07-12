@@ -178,24 +178,13 @@ parameter_types! {
 	pub const SS58Prefix: u8 = 42;
 }
 
-/// We currently allow all calls.
-pub struct BaseFilter;
-impl Contains<Call> for BaseFilter {
-	fn contains(c: &Call) -> bool {
-		match *c {
-			// Remark is used as a no-op call in the benchmarking
-			Call::System(SystemCall::remark { .. }) => true,
-			Call::System(_) => false,
-			_ => true,
-		}
-	}
-}
+
 
 // Configure FRAME pallets to include in runtime.
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = BaseFilter;
+	type BaseCallFilter = frame_support::traits::Everything;
 	// type BaseCallFilter = frame_support::traits::Everything;
 	/// Block & extrinsics weights: base values and limits.
 	type BlockWeights = RuntimeBlockWeights;
@@ -670,7 +659,6 @@ construct_runtime!(
 		Currencies: orml_currencies,
 		Tokens: orml_tokens exclude_parts { Call },
 		AmmEURUSDC: pallet_pendulum_amm,
-		Proxy: pallet_proxy,
 		// Utility: pallet_utility::{Pallet, Call, Event},
 	}
 );
