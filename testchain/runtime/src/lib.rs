@@ -488,8 +488,8 @@ use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::{parameter_type_with_key, MultiCurrency};
 use sp_std::str;
 
-type FetchBalanceInput = [u8; 32 + 32 + 12]; // 1-> owner:AccountId, 2-> asset_issuer: [u8;32], 3-> asset_code: [u8;12]
-type TransferBalanceInput = [u8; 32 + 32 + 32 + 12 + 16]; // 1-> from: AccoundId, 2-> to: AccountId, 3-> asset_issuer: [u8;32], 4-> asset_code: [u8;12], 5-> balance: u128
+type FetchBalanceInput = ([u8;32], [u8;32], [u8;12]); // 1-> owner:AccountId, 2-> asset_issuer: [u8;32], 3-> asset_code: [u8;12]
+type TransferBalanceInput = ([u8;32], [u8;32], [u8;32], [u8;12], [u8;16]); // 1-> from: AccoundId, 2-> to: AccountId, 3-> asset_issuer: [u8;32], 4-> asset_code: [u8;12], 5-> balance: u128
 
 impl ChainExtension<Runtime> for BalanceChainExtension {
 	fn call<E: Ext>(func_id: u32, env: Environment<E, InitState>) -> Result<RetVal, DispatchError>
@@ -502,87 +502,57 @@ impl ChainExtension<Runtime> for BalanceChainExtension {
 			//fetch balance
 			1101 => {
 				let mut env = env.buf_in_buf_out();
-				let input = env.read_as::<FetchBalanceInput>();
-				match input {
-					Ok(input) => {
-						let mut account_array: [u8; 32] = Default::default();
-						account_array.copy_from_slice(&input[0..32]);
-						let account_id = AccountId::from(account_array);
+				let (account_id, asset_issuer, asset_code) = env.read_as::<FetchBalanceInput>()?;
 
-						let mut issuer_array: [u8; 32] = Default::default();
-						issuer_array.copy_from_slice(&input[32..64]);
+				let account_id = AccountId::from(account_id);
 
-						let mut asset_code_array: [u8; 12] = Default::default();
-						asset_code_array.copy_from_slice(&input[64..]);
-						let asset_str: &str = str::from_utf8(&asset_code_array).map_err(|_| {
-							DispatchError::Other("ChainExtension failed to decode asset")
-						})?;
-						let asset_str = asset_str.trim_matches(char::from(0));
-						let currency_id: CurrencyId =
-							CurrencyId::try_from((asset_str, issuer_array))?;
+				let asset_str: &str = str::from_utf8(&asset_code).map_err(|_| {
+					DispatchError::Other("ChainExtension failed to decode asset")
+				})?;
+				let asset_str = asset_str.trim_matches(char::from(0));
 
-						let balance = <Tokens as MultiCurrency<AccountId>>::total_balance(
-							currency_id,
-							&account_id,
-						);
+				let currency_id: CurrencyId =
+					CurrencyId::try_from((asset_str, asset_issuer))?;
 
-						let ret_val = balance.encode();
-						env.write(&ret_val, false, None).map_err(|_| {
-							DispatchError::Other("ChainExtension failed to fetch balance")
-						})?;
-					},
-					Err(err) => {
-						info!("CHAINEXTENSION ERROR for fetch balance: {:?}", err);
-					},
-				}
+				let balance = <Tokens as MultiCurrency<AccountId>>::total_balance(
+					currency_id,
+					&account_id,
+				);
+
+				let ret_val = balance.encode();
+				env.write(&ret_val, false, None).map_err(|_| {
+					DispatchError::Other("ChainExtension failed to fetch balance")
+				})?;
 			},
 
 			// transfer balance
 			1102 => {
 				let mut env = env.buf_in_buf_out();
-				let input = env.read_as::<TransferBalanceInput>();
-				match input {
-					Ok(input) => {
-						let mut from_account_array: [u8; 32] = Default::default();
-						from_account_array.copy_from_slice(&input[0..32]);
-						let from_account_id = AccountId::from(from_account_array);
+				let (from_account_id, to_account_id, asset_issuer, asset_code, amount) = env.read_as::<TransferBalanceInput>()?;
 
-						let mut to_account_array: [u8; 32] = Default::default();
-						to_account_array.copy_from_slice(&input[32..64]);
-						let to_account_id = AccountId::from(to_account_array);
+				let from_account_id = AccountId::from(from_account_id);
+				let to_account_id = AccountId::from(to_account_id);
 
-						let mut issuer_array: [u8; 32] = Default::default();
-						issuer_array.copy_from_slice(&input[64..96]);
+				let asset_str: &str = str::from_utf8(&asset_code).map_err(|_| {
+					DispatchError::Other("ChainExtension failed to decode asset")
+				})?;
+				let asset_str = asset_str.trim_matches(char::from(0));
 
-						let mut asset_code_array: [u8; 12] = Default::default();
-						asset_code_array.copy_from_slice(&input[96..108]);
-						let asset_str: &str = str::from_utf8(&asset_code_array).map_err(|_| {
-							DispatchError::Other("ChainExtension failed to decode asset")
-						})?;
-						let asset_str = asset_str.trim_matches(char::from(0));
-						let currency_id: CurrencyId =
-							CurrencyId::try_from((asset_str, issuer_array))?;
+				let currency_id = CurrencyId::try_from((asset_str, asset_issuer))?;
 
-						let mut amount_array: [u8; 16] = Default::default();
-						amount_array.copy_from_slice(&input[108..]);
-						let amount: u128 = u128::from_le_bytes(amount_array);
+				let amount = u128::from_le_bytes(amount);
 
-						let dispatch_result = <Currencies as MultiCurrency<AccountId>>::transfer(
-							currency_id,
-							&from_account_id,
-							&to_account_id,
-							amount,
-						);
+				let dispatch_result = <Currencies as MultiCurrency<AccountId>>::transfer(
+					currency_id,
+					&from_account_id,
+					&to_account_id,
+					amount,
+				);
 
-						let ret_val = dispatch_result.encode();
-						env.write(&ret_val, false, None).map_err(|_| {
-							DispatchError::Other("ChainExtension failed to fetch balance")
-						})?;
-					},
-					Err(err) => {
-						info!("CHAINEXTENSION ERROR for transfer balance: {:?}", err);
-					},
-				}
+				let ret_val = dispatch_result.encode();
+				env.write(&ret_val, false, None).map_err(|_| {
+					DispatchError::Other("ChainExtension failed to fetch balance")
+				})?;
 			},
 
 			other => {
