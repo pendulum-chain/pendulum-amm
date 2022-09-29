@@ -328,11 +328,12 @@ fn _mint<T: Config>(to: &T::AccountId, value: T::Balance) {
 }
 
 fn _burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T> {
+	let prev_bal = <LpBalances<T>>::get(from).ok_or(Error::<T>::Forbidden)?;
+
 	<TotalSupply<T>>::mutate(|v| {
 		*v = v.saturating_sub(value);
 	});
 
-	let prev_bal = <LpBalances<T>>::get(from).ok_or(Error::<T>::Forbidden)?;
 	<LpBalances<T>>::insert(from.clone(), prev_bal.saturating_sub(value));
 
 	<Pallet<T>>::deposit_event(Event::<T>::Transfer { from: Some(from.clone()), to: None, value });
