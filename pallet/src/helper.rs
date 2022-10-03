@@ -21,7 +21,7 @@ use sp_std::{
 
 type FuncResult<T> = Result<(), Error<T>>;
 
-pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
+pub(crate) fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
 	let zero = T::Balance::zero();
 
 	let contract = <PalletAccountId<T>>::get().unwrap();
@@ -72,7 +72,7 @@ pub fn mint<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 	Ok(())
 }
 
-pub fn burn<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
+pub(crate) fn burn<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResult {
 	let zero = T::Balance::zero();
 
 	let contract = <PalletAccountId<T>>::get().unwrap();
@@ -126,7 +126,7 @@ pub fn burn<T: Config>(to: &T::AccountId, caller: T::AccountId) -> DispatchResul
 	Ok(())
 }
 
-pub fn _swap<T: Config>(
+pub(crate) fn _swap<T: Config>(
 	amount_0_out: T::Balance,
 	amount_1_out: T::Balance,
 	to: &T::AccountId,
@@ -210,7 +210,7 @@ pub fn _swap<T: Config>(
 	Ok(())
 }
 
-pub fn transfer_tokens<T: Config>(
+pub(crate) fn transfer_tokens<T: Config>(
 	from: &T::AccountId,
 	to: &T::AccountId,
 	asset: T::CurrencyId,
@@ -224,12 +224,12 @@ pub fn transfer_tokens<T: Config>(
 	T::AmmExtension::transfer_balance(from, to, asset, amount)
 }
 
-pub fn balance_of<T: Config>(owner: &T::AccountId, asset: T::CurrencyId) -> T::Balance {
+pub(crate) fn balance_of<T: Config>(owner: &T::AccountId, asset: T::CurrencyId) -> T::Balance {
 	//todo: what's the weight of this function call?
 	T::AmmExtension::fetch_balance(owner, asset)
 }
 
-pub fn _update<T: Config>(
+pub(crate) fn _update<T: Config>(
 	balance_0: T::Balance,
 	balance_1: T::Balance,
 	reserve_0: T::Balance,
@@ -340,7 +340,7 @@ fn _burn<T: Config>(from: &T::AccountId, value: T::Balance) -> FuncResult<T> {
 	Ok(())
 }
 
-pub fn _transfer_liquidity<T: Config>(
+pub(crate) fn _transfer_liquidity<T: Config>(
 	from: T::AccountId,
 	to: T::AccountId,
 	amount: T::Balance,
@@ -364,7 +364,7 @@ pub fn _transfer_liquidity<T: Config>(
 	Ok(())
 }
 
-pub fn _get_amount_out<T: Config>(
+pub(crate) fn _get_amount_out<T: Config>(
 	amount_in: T::Balance,
 	reserve_in: T::Balance,
 	reserve_out: T::Balance,
@@ -387,7 +387,7 @@ pub fn _get_amount_out<T: Config>(
 	Ok(numerator.checked_div(&denominator).unwrap_or(T::Balance::zero()))
 }
 
-pub fn get_amount_in<T: Config>(
+pub(crate) fn get_amount_in<T: Config>(
 	amount_out: T::Balance,
 	reserve_in: T::Balance,
 	reserve_out: T::Balance,
@@ -416,7 +416,7 @@ pub fn get_amount_in<T: Config>(
 		.unwrap_or(T::Balance::zero()))
 }
 
-pub fn quote<T: Config>(
+pub(crate) fn quote<T: Config>(
 	amount_a: T::Balance,
 	reserve_a: T::Balance,
 	reserve_b: T::Balance,
