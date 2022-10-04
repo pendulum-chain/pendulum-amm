@@ -71,7 +71,7 @@ benchmarks! {
 		let caller_orig0_bal = balance_of::<T>(&caller,asset_0);
 		let caller_orig1_bal = balance_of::<T>(&caller,asset_1);
 
-		let deposit_bal = T::Balance::from(10u8);
+		let deposit_bal = T::Balance::from(10000u32);
 	}: _(RawOrigin::Signed(caller.clone()), deposit_bal)
 	verify {
 		let contract = <PalletAccountId<T>>::get().unwrap();
@@ -103,7 +103,7 @@ benchmarks! {
 		let caller_orig0_bal = balance_of::<T>(&caller,asset_0);
 		let caller_orig1_bal = balance_of::<T>(&caller,asset_1);
 
-		let deposit_bal = T::Balance::from(10u8);
+		let deposit_bal = T::Balance::from(10000u32);
 	}: _(RawOrigin::Signed(caller.clone()), deposit_bal)
 	verify {
 		let contract = <PalletAccountId<T>>::get().unwrap();
@@ -136,7 +136,7 @@ benchmarks! {
 		let white_listed: T::AccountId = whitelisted_caller();
 		<Amm<T>>::set_fee_to(T::Origin::from(origin.clone()),white_listed).expect("set ToFee should work");
 
-		let deposit_bal = T::Balance::from(10u8);
+		let deposit_bal = T::Balance::from(10000u32);
 
 		<Amm<T>>::deposit_asset_1(T::Origin::from(origin), deposit_bal).expect("deposit should work");
 
@@ -149,7 +149,7 @@ benchmarks! {
 
 		let (reserve_orig0, reserve_orig1, _) = reserves::<T>();
 
-		let withdrawal_bal = contract_orig0_bal - T::Balance::one();
+		let withdrawal_bal = contract_orig0_bal - T::MinimumLiquidity::get() - T::Balance::one();
 
 	}: _(RawOrigin::Signed(caller.clone()), withdrawal_bal)
 	verify {
@@ -189,7 +189,7 @@ benchmarks! {
 		let caller: T::AccountId = <FeeToSetter<T>>::get().unwrap();
 		let origin = RawOrigin::Signed(caller.clone());
 
-		let deposit_bal = T::Balance::from(10u8);
+		let deposit_bal = T::Balance::from(10000u32);
 		<Amm<T>>::deposit_asset_1(T::Origin::from(origin), deposit_bal).expect("deposit should work");
 
 		let asset_0 = T::Asset0::get();
@@ -204,7 +204,7 @@ benchmarks! {
 
 		let (reserve_orig0, reserve_orig1, _) = reserves::<T>();
 
-		let swap_bal = T::Balance::from(5u8);
+		let swap_bal = T::Balance::from(5000u32);
 	}: _(RawOrigin::Signed(caller.clone()), swap_bal)
 	verify {
 		let caller_new0_bal = balance_of::<T>(&caller, asset_0);
@@ -227,7 +227,7 @@ benchmarks! {
 		let caller: T::AccountId = <FeeToSetter<T>>::get().unwrap();
 		let origin = RawOrigin::Signed(caller.clone());
 
-		let deposit_bal = T::Balance::from(10u8);
+		let deposit_bal = T::Balance::from(10000u32);
 		<Amm<T>>::deposit_asset_1(T::Origin::from(origin), deposit_bal).expect("deposit should work");
 
 		let asset_0 = T::Asset0::get();
@@ -242,7 +242,7 @@ benchmarks! {
 
 		let (reserve_orig0, reserve_orig1, _) = reserves::<T>();
 
-		let swap_bal = T::Balance::from(5u8);
+		let swap_bal = T::Balance::from(5000u32);
 	}: _(RawOrigin::Signed(caller.clone()), swap_bal)
 	verify {
 		let caller_new0_bal = balance_of::<T>(&caller, asset_0);
