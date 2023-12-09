@@ -150,6 +150,16 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	system_cfg.into()
 }
 
+pub fn incomplete_config_test_ext() -> sp_io::TestExternalities {
+	let mut system_cfg = system::GenesisConfig::default().build_storage::<Test>().unwrap();
+
+	amm::GenesisConfig::<Test> { contract_id: None, zero_account: Some(0), fee_to_setter: None }
+		.assimilate_storage(&mut system_cfg)
+		.unwrap();
+
+	system_cfg.into()
+}
+
 pub struct Extension;
 
 impl AmmExtension<AccountId, Asset, Balance, Moment> for Extension {

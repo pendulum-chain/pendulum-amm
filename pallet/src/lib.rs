@@ -284,6 +284,8 @@ pub mod pallet {
 		InsufficientOutputAmount,
 		InvalidDepositToken,
 		InvalidSwapToken,
+		InvalidConfigNoContractAccount,
+		InvalidConfigNoFeeToSetter,
 		InvalidTo,
 		InvalidK,
 		IdenticalAddress,
@@ -291,6 +293,15 @@ pub mod pallet {
 		AddressGenerationFailed,
 		WithdrawWithoutSupply,
 	}
+
+	fn get_fee_to_setter<T: Config>() -> Result<T::AccountId, Error<T>> {
+		<FeeToSetter<T>>::get().ok_or(Error::<T>::InvalidConfigNoFeeToSetter)
+	}
+
+	fn get_contract_account<T: Config>() -> Result<T::AccountId, Error<T>> {
+		<PalletAccountId<T>>::get().ok_or(Error::<T>::InvalidConfigNoContractAccount)
+	}
+	// pub fn reserves<T: Config>() -> (T::Balance, T::Balance, T::Moment) {
 
 	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
 	// These functions materialize as "extrinsics", which are often compared to transactions.
@@ -302,7 +313,7 @@ pub mod pallet {
 			let caller = ensure_signed(origin)?;
 
 			ensure!(
-				caller == <FeeToSetter<T>>::get().unwrap(), // the read
+				caller == get_fee_to_setter::<T>()?, // the read
 				Error::<T>::Forbidden
 			);
 
@@ -317,7 +328,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::skim())]
 		pub fn skim(origin: OriginFor<T>) -> DispatchResult {
 			let to = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -341,7 +352,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::sync())]
 		pub fn sync(origin: OriginFor<T>) -> DispatchResult {
 			let _ = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -359,7 +370,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::deposit_asset_1())]
 		pub fn deposit_asset_1(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -382,7 +393,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::deposit_asset_2())]
 		pub fn deposit_asset_2(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 			let reserves = <Reserves<T>>::get();
 
 			let asset_0 = T::Asset0::get();
@@ -406,7 +417,7 @@ pub mod pallet {
 		#[pallet::weight(<T as Config>::WeightInfo::withdraw())]
 		pub fn withdraw(origin: OriginFor<T>, amount: T::Balance) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 
 			ensure!(
 				<TotalSupply<T>>::get() != T::Balance::zero(),
@@ -424,7 +435,7 @@ pub mod pallet {
 			amount_to_receive: T::Balance,
 		) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 			let reserves = <Reserves<T>>::get();
 
 			let amount_0_in =
@@ -444,7 +455,7 @@ pub mod pallet {
 			amount_to_receive: T::Balance,
 		) -> DispatchResult {
 			let caller = ensure_signed(origin)?;
-			let contract = <PalletAccountId<T>>::get().unwrap();
+			let contract = get_contract_account::<T>()?;
 			let reserves = <Reserves<T>>::get();
 
 			let amount_1_in =
